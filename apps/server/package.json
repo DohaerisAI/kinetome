@@ -1,5 +1,5 @@
 {
-  "name": "@sprite/server",
+  "name": "@kinetome/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "@sprite/core": "*",
+    "@kinetome/core": "*",
     "hono": "^4.13.0",
     "@hono/node-server": "^2.1.0",
     "zod": "^4.1.0"

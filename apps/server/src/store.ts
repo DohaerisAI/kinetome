@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import {
   CharacterDesign, DEFAULT_STYLE, GodotSettings, PART_PRESETS, Project, SpriteAsset, StyleBible,
   godotFiles, isUniform, newMove, parseSheet, slugify, zip,
-} from '@sprite/core';
+} from '@kinetome/core';
 
 /**
  * On-disk layout (plain files so projects are diffable and git-friendly):

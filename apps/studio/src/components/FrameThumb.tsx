@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { Rect } from '@sprite/core';
+import type { Rect } from '@kinetome/core';
 
 const bboxCache = new WeakMap<HTMLImageElement, Map<string, Rect>>();
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { lintAsset, type CharacterDesign, type SpriteAsset, type StyleBible } from '@sprite/core';
+import { lintAsset, type CharacterDesign, type SpriteAsset, type StyleBible } from '@kinetome/core';
 import { api, type Model, type Usage } from '../../api.ts';
 import { Icon, type IconName } from '../../icons.tsx';
 import { loadImage, toPixels, useImage } from '../../pixels.ts';

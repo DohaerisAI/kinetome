@@ -1,4 +1,4 @@
-import { designPalette, designReferencePrompt } from '@sprite/core';
+import { designPalette, designReferencePrompt } from '@kinetome/core';
 import { api } from '../../api.ts';
 import { Icon } from '../../icons.tsx';
 import { useImage } from '../../pixels.ts';

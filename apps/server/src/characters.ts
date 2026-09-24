@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import {
   contactSheet, designColors, packGrid, PLATFORMER_MOVES,
   type CharacterDesign, type PixelImage, type RenderedAnim, type RenderOutput,
-} from '@sprite/core';
+} from '@kinetome/core';
 import { cellFor, draftMove, executeProgram, polishDescription, reviseProgram, writeProgram, type CodeAnim } from './agents.ts';
 import { claudeStatus, logUsage, readUsage, type ClaudeUsage, type Model } from './claude.ts';
 import { encodePng } from './png.ts';

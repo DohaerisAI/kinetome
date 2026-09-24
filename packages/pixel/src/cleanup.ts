@@ -1,4 +1,4 @@
-import { hexToRgb, type PixelImage } from '@sprite/core';
+import { hexToRgb, type PixelImage } from '@kinetome/core';
 import { cloneImage } from './image.ts';
 
 /**

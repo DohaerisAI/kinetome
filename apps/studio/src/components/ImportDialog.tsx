@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AssetKind, detectGrid, hardenAlpha, isUniform, normalizeFrames, parseSheet, sliceGrid, sliceIslands, snapToPalette,
   type Animation, type ParsedSheet, type SourceFrame, type StyleBible,
-} from '@sprite/core';
+} from '@kinetome/core';
 import type { AssetDraft } from '../api.ts';
 import { canvasToPng, drawChecker, loadImage, pixelsToCanvas, repack, toPixels } from '../pixels.ts';
 

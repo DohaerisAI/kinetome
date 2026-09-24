@@ -1,4 +1,4 @@
-import type { CharacterDesign, GodotSettings, Project, Rect, SpriteAsset, StyleBible } from '@sprite/core';
+import type { CharacterDesign, GodotSettings, Project, Rect, SpriteAsset, StyleBible } from '@kinetome/core';
 
 export type Model = 'sonnet' | 'opus' | 'haiku';
 export interface Usage { input: number; cacheRead: number; cacheWrite: number; output: number; costUsd: number; ms: number }

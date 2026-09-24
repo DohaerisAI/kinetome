@@ -1,6 +1,6 @@
-# Sprite Studio
+# Kinetome
 
-AI-backed 2D pixel sprite engine: import, inspect, and generate sprites that all obey one project Style Bible.
+*A living book of moving sprites.* An AI-powered 2D pixel sprite studio: design characters with their lore, draw reference sprites with Gemini, and let Claude animate them with code, all locked to one project Style Bible, with clean exports to Godot 4.
 
 ```
 npm install

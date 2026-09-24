@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PART_PRESETS, partSlug, rampFor, rawBrief } from '@sprite/core';
+import { PART_PRESETS, partSlug, rampFor, rawBrief } from '@kinetome/core';
 import { api } from '../../api.ts';
 import { Icon } from '../../icons.tsx';
 import { ColorField } from '../ColorWheel.tsx';

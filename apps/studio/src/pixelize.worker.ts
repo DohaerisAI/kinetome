@@ -1,9 +1,9 @@
 /// <reference lib="webworker" />
-import type { PixelImage } from '@sprite/core';
+import type { PixelImage } from '@kinetome/core';
 import {
   assessResult, findLoops, pixelize, prepareSheet,
   type PixelizeOptions, type PixelizeResult, type QualityReport,
-} from '@sprite/pixel';
+} from '@kinetome/pixel';
 
 export interface Prepared { count: number; rows: number[][]; sheet: boolean; dropped: number; thumbs: PixelImage[] }
 

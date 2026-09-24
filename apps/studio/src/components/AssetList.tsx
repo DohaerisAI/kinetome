@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { SpriteAsset } from '@sprite/core';
+import type { SpriteAsset } from '@kinetome/core';
 import { Icon } from '../icons.tsx';
 import { api } from '../api.ts';
 import { useImage } from '../pixels.ts';

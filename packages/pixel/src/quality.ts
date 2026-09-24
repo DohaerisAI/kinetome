@@ -1,4 +1,4 @@
-import { countColors, type PixelImage } from '@sprite/core';
+import { countColors, type PixelImage } from '@kinetome/core';
 import { bodyHeight, contentBounds } from './image.ts';
 import { signature } from './loop.ts';
 import type { PixelizeResult } from './pipeline.ts';

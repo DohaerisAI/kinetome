@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { designPalette, type CharacterDesign, type Project, type SpriteAsset, type StyleBible } from '@sprite/core';
+import { designPalette, type CharacterDesign, type Project, type SpriteAsset, type StyleBible } from '@kinetome/core';
 import { api, type AssetDraft, type Model, type Usage } from './api.ts';
 import { CharactersView } from './components/characters/CharactersView.tsx';
 import type { ImportRequest } from './components/characters/shared.tsx';
@@ -254,7 +254,7 @@ export function App() {
       onDrop={onDrop}
     >
       <header className="topbar">
-        <div className="brand">Sprite Studio</div>
+        <div className="brand">Kinetome</div>
         <select value={pid ?? ''} onChange={e => setPid(e.target.value)} aria-label="Project">
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>

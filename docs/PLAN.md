@@ -1,4 +1,4 @@
-# Sprite Studio — The Plan
+# Kinetome — The Plan
 
 > One sentence: **a consistency compiler for game art.** You describe a world once, and every sprite in the project — generated, imported, recorded, or drawn — compiles into that world's style, animated, sliced, hitboxed, and dropped straight into your game.
 

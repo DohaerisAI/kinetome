@@ -1,4 +1,4 @@
-import { hexToRgb, PaletteMatcher, rgbToHex, rgbToOklab, type PixelImage } from '@sprite/core';
+import { hexToRgb, PaletteMatcher, rgbToHex, rgbToOklab, type PixelImage } from '@kinetome/core';
 
 /** Deterministic PRNG so the same input always yields the same palette. */
 function mulberry32(seed: number) {

@@ -1,6 +1,6 @@
 import { readFile, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { designColors, hexToRgb, PaletteMatcher, type CharacterDesign, type PixelImage, type SpriteAsset } from '@sprite/core';
+import { designColors, hexToRgb, PaletteMatcher, type CharacterDesign, type PixelImage, type SpriteAsset } from '@kinetome/core';
 import { decodePng, encodePng } from './png.ts';
 import * as store from './store.ts';
 

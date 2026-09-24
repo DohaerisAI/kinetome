@@ -1,4 +1,4 @@
-import type { PixelImage } from '@sprite/core';
+import type { PixelImage } from '@kinetome/core';
 import { blit, cloneImage, contentBounds, createImage } from './image.ts';
 
 export type MotionPreset = 'breathe' | 'hover' | 'squash' | 'hurt-flash' | 'hurt-shake';

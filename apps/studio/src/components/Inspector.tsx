@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   AssetKind, downscale, hardenAlpha, lintAsset, snapToPalette, type FixId, type SpriteAsset, type StyleBible,
-} from '@sprite/core';
+} from '@kinetome/core';
 import { canvasToPng, download, pixelsToCanvas, usePixels } from '../pixels.ts';
 
 interface Props {

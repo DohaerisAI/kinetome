@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SpriteAsset } from '@sprite/core';
+import type { SpriteAsset } from '@kinetome/core';
 import { Icon } from '../icons.tsx';
 import { drawChecker } from '../pixels.ts';
 import { FrameThumb } from './FrameThumb.tsx';

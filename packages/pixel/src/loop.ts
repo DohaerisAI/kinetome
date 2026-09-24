@@ -1,4 +1,4 @@
-import type { PixelImage } from '@sprite/core';
+import type { PixelImage } from '@kinetome/core';
 
 /** Tiny luminance+alpha thumbnail used to compare frames cheaply. */
 export function signature(img: PixelImage, size = 24): Float32Array {

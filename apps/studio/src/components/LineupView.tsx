@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { lintAsset, type LintReport, type SpriteAsset, type StyleBible } from '@sprite/core';
+import { lintAsset, type LintReport, type SpriteAsset, type StyleBible } from '@kinetome/core';
 import { api } from '../api.ts';
 import { loadImage, toPixels } from '../pixels.ts';
 

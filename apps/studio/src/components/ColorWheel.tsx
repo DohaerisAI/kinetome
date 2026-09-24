@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { rampFor } from '@sprite/core';
+import { rampFor } from '@kinetome/core';
 
 type HSV = { h: number; s: number; v: number };
 

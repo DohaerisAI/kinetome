@@ -1,4 +1,4 @@
-import type { PixelImage } from '@sprite/core';
+import type { PixelImage } from '@kinetome/core';
 import { cloneImage, LabCache, labDist } from './image.ts';
 
 export type RGB = [number, number, number];

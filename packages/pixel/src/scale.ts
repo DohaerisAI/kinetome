@@ -1,4 +1,4 @@
-import type { PixelImage } from '@sprite/core';
+import type { PixelImage } from '@kinetome/core';
 import { createImage } from './image.ts';
 
 export interface GridGuess { scale: number; offsetX: number; offsetY: number; confidence: number }

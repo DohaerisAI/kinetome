@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countColors, type PixelImage } from '@sprite/core';
+import { countColors, type PixelImage } from '@kinetome/core';
 import {
   addOutline, assessResult, bodyHeight, hasOutline, prepareSheet, removeOrphans, splitSheet,
   anchorFrames, contentBounds, createImage, detectPixelScale, estimateBackground, findLoops, generateMotion,

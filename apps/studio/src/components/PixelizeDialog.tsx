@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AssetKind, countColors, designPalette, lintAsset, packGrid, PLATFORMER_MOVES,
   type CharacterDesign, type PixelImage, type SpriteAsset, type StyleBible,
-} from '@sprite/core';
+} from '@kinetome/core';
 import {
   contentBounds, DEFAULT_PIXELIZE, generateMotion, MOTION_PRESETS, pickEvenly,
   type LoopCandidate, type MotionPreset, type PixelizeOptions, type PixelizeResult, type QualityReport,
-} from '@sprite/pixel';
+} from '@kinetome/pixel';
 import { api, type AssetDraft } from '../api.ts';
 import { decodeFiles, type Decoded } from '../decode.ts';
 import { mergeIntoAsset } from '../merge.ts';

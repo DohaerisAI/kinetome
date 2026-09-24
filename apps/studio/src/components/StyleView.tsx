@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { countColors, StyleBible, type Project, type SpriteAsset } from '@sprite/core';
+import { countColors, StyleBible, type Project, type SpriteAsset } from '@kinetome/core';
 import { api } from '../api.ts';
 import { loadImage, toPixels } from '../pixels.ts';
 

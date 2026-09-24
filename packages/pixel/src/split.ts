@@ -1,4 +1,4 @@
-import { sliceIslands, type PixelImage, type Rect } from '@sprite/core';
+import { sliceIslands, type PixelImage, type Rect } from '@kinetome/core';
 
 export interface SheetSplit {
   /** Frames in reading order. */

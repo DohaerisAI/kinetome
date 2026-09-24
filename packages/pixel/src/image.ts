@@ -1,4 +1,4 @@
-import { rgbToOklab, type PixelImage, type Rect } from '@sprite/core';
+import { rgbToOklab, type PixelImage, type Rect } from '@kinetome/core';
 
 export function createImage(width: number, height: number): PixelImage {
   return { width, height, data: new Uint8ClampedArray(width * height * 4) };

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { PixelImage } from '@sprite/core';
+import type { PixelImage } from '@kinetome/core';
 import { drawChecker } from '../pixels.ts';
 
 function toCanvas(f: PixelImage): HTMLCanvasElement {

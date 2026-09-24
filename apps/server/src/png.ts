@@ -1,5 +1,5 @@
 import { deflateSync, inflateSync } from 'node:zlib';
-import { crc32, type PixelImage } from '@sprite/core';
+import { crc32, type PixelImage } from '@kinetome/core';
 
 /** Minimal RGBA PNG encoder (filter 0 rows + zlib); enough for sprites and preview sheets. */
 export function encodePng(img: PixelImage): Buffer {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { packGrid, type PixelImage, type Rect, type SourceFrame } from '@sprite/core';
+import { packGrid, type PixelImage, type Rect, type SourceFrame } from '@kinetome/core';
 
 const cache = new Map<string, Promise<HTMLImageElement>>();
 

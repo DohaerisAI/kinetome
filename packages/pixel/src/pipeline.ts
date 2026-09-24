@@ -1,4 +1,4 @@
-import { countColors, hardenAlpha, snapToPalette, type PixelImage, type Rect } from '@sprite/core';
+import { countColors, hardenAlpha, snapToPalette, type PixelImage, type Rect } from '@kinetome/core';
 import { anchorFrames, type Anchor } from './anchor.ts';
 import { estimateBackground, isChroma, removeBackground, type Background, type RGB } from './background.ts';
 import { addOutline, hasOutline, removeOrphans } from './cleanup.ts';

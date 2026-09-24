@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { PixelImage } from '@sprite/core';
+import type { PixelImage } from '@kinetome/core';
 
 /** A frame drawn into a square box: integer zoom when it fits, nearest-neighbour always. */
 export function PixelThumb({ img, size }: { img: PixelImage | undefined; size: number }) {

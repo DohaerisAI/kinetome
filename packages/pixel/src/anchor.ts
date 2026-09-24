@@ -1,4 +1,4 @@
-import type { PixelImage, Rect } from '@sprite/core';
+import type { PixelImage, Rect } from '@kinetome/core';
 import { blit, contentBounds, createImage } from './image.ts';
 
 export type Anchor = 'feet' | 'center' | 'none';

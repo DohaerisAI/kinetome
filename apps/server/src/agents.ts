@@ -2,7 +2,7 @@ import vm from 'node:vm';
 import {
   designColors, GFX_REFERENCE, makeGfx, PLATFORMER_MOVES, rawBrief, RIG_REFERENCE, validateProgram,
   type AnimSpec, type CharacterDesign, type Gfx, type MoveDraft, type PartSpec, type RenderOutput, type StyleBible,
-} from '@sprite/core';
+} from '@kinetome/core';
 import type { RigContext } from './rig.ts';
 import { runClaude, type ClaudeResult, type Model } from './claude.ts';
 

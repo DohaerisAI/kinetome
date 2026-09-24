@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { CharacterDesign, SpriteAsset, StyleBible } from '@sprite/core';
+import type { CharacterDesign, SpriteAsset, StyleBible } from '@kinetome/core';
 import type { Model, Usage } from '../../api.ts';
 import { Icon, type IconName } from '../../icons.tsx';
 

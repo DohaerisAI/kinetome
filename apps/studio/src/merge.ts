@@ -1,4 +1,4 @@
-import { packGrid, type Animation, type PixelImage, type SpriteAsset } from '@sprite/core';
+import { packGrid, type Animation, type PixelImage, type SpriteAsset } from '@kinetome/core';
 
 export interface NewAnimations {
   frames: PixelImage[];

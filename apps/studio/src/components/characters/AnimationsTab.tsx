@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { designMovePrompt, layoutFor, newMove, PLATFORMER_MOVES, slugify, type MoveDraft, type PixelImage } from '@sprite/core';
+import { designMovePrompt, layoutFor, newMove, PLATFORMER_MOVES, slugify, type MoveDraft, type PixelImage } from '@kinetome/core';
 import { api, type CodeEvent, type Packed, type Usage } from '../../api.ts';
 import { Icon } from '../../icons.tsx';
 import { mergeIntoAsset } from '../../merge.ts';
