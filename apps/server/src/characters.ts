@@ -123,7 +123,8 @@ characters.post('/projects/:p/characters/:c/code/run', async c => {
   const colors = designColors(design);
   const renders = join(store.projectPath(p), '.renders', id);
   await mkdir(renders, { recursive: true });
-  const rig = body.useReference ? await buildRig(p, design, renders) : null;
+  // a brand-new program re-freezes the reference; revisions keep the one they were written against
+  const rig = body.useReference ? await buildRig(p, design, renders, !(body.fromCurrent && design.code && design.codeRig)) : null;
   if (body.useReference && !rig) throw new store.HttpError(400, 'This character has no reference sprite in the library yet');
   // a revision keeps the mode of the program it revises
   if (body.fromCurrent && design.code && design.codeRig !== !!rig) throw new store.HttpError(400, design.codeRig ? 'The current program animates the reference; keep "Use reference" on, or redraw from scratch' : 'The current program was drawn from scratch; turn "Use reference" off, or redraw');

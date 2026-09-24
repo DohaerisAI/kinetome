@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { designColors, hexToRgb, PaletteMatcher, type CharacterDesign, type PixelImage, type SpriteAsset } from '@sprite/core';
 import { decodePng, encodePng } from './png.ts';
@@ -85,10 +85,36 @@ function griddedImage(ref: PixelImage): PixelImage {
   return out;
 }
 
-export async function buildRig(p: string, d: CharacterDesign, dir: string): Promise<RigContext | null> {
-  const loaded = await loadReference(p, d);
-  if (!loaded) return null;
-  const { asset, ref } = loaded;
+/**
+ * The reference a rig program was written against is FROZEN in a snapshot next to the
+ * design: merging new animations into the library sprite can grow its frame cell and
+ * shift the reference, which would misalign every part polygon of an existing program.
+ */
+const snapshotPath = (p: string, d: CharacterDesign) => join(store.projectPath(p), 'characters', `${d.id}.ref.png`);
+const snapshotMeta = (p: string, d: CharacterDesign) => join(store.projectPath(p), 'characters', `${d.id}.ref.json`);
+
+async function readSnapshot(p: string, d: CharacterDesign): Promise<{ ref: PixelImage; pivot: { x: number; y: number } } | null> {
+  try {
+    await stat(snapshotPath(p, d));
+    return { ref: decodePng(await readFile(snapshotPath(p, d))), pivot: JSON.parse(await readFile(snapshotMeta(p, d), 'utf8')).pivot };
+  } catch { return null; }
+}
+
+/**
+ * `fresh`: take the reference from the library sprite now and freeze it (new program).
+ * Otherwise reuse the frozen snapshot when there is one (revisions, re-renders).
+ */
+export async function buildRig(p: string, d: CharacterDesign, dir: string, fresh = false): Promise<RigContext | null> {
+  let src = fresh ? null : await readSnapshot(p, d);
+  if (!src) {
+    const loaded = await loadReference(p, d);
+    if (!loaded) return null;
+    src = { ref: loaded.ref, pivot: loaded.asset.pivot };
+    await writeFile(snapshotPath(p, d), encodePng(src.ref));
+    await writeFile(snapshotMeta(p, d), JSON.stringify({ pivot: src.pivot, takenAt: new Date().toISOString() }));
+  }
+  const { ref } = src;
+  const asset = { pivot: src.pivot };
   const pad = Math.max(6, Math.round(Math.max(ref.width, ref.height) * 0.15));
   const imagePath = join(dir, 'reference.png');
   await writeFile(imagePath, encodePng(griddedImage(ref)));
