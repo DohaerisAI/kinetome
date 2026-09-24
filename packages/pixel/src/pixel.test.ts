@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { countColors, type PixelImage } from '@sprite/core';
 import {
+  addOutline, assessResult, hasOutline, prepareSheet, removeOrphans, splitSheet,
   anchorFrames, contentBounds, createImage, detectPixelScale, estimateBackground, findLoops, generateMotion,
   pickEvenly, pixelize, removeBackground, sampleGrid, DEFAULT_PIXELIZE,
 } from './index.ts';
@@ -57,7 +58,8 @@ test('detects the hidden grid in blurry upscaled pixel art and recovers the spri
   assert.ok(g, 'grid detected');
   assert.ok(Math.abs(g.scale - 5.6) < 0.15, `scale ${g.scale}`);
   const bg = estimateBackground(fake)!;
-  assert.ok(bg[0] > 240 && bg[1] > 240, 'white background');
+  assert.equal(bg.kind, 'solid');
+  assert.ok(bg.colors[0][0] > 240 && bg.colors[0][1] > 240, 'white background');
   const rec = sampleGrid(removeBackground(fake, bg), g);
   const b = contentBounds(rec, 128)!, want = contentBounds(src, 128)!;
   assert.ok(Math.abs(b.w - want.w) <= 1 && Math.abs(b.h - want.h) <= 1, `recovered ${b.w}x${b.h}, want ${want.w}x${want.h}`);
@@ -154,4 +156,86 @@ test('findLoops ignores still stretches and finds the real cycle', () => {
   const best = findLoops(frames, 4)[0];
   assert.equal((best.end - best.start) % 8, 0, `got ${best.start}-${best.end}`);
   assert.ok(best.start >= 4, 'loop starts in the moving part');
+});
+
+/** Paints a pose (filled rounded body + head) at (x, y) with height h. */
+function pose(img: PixelImage, x: number, y: number, h: number, color: [number, number, number]) {
+  const w = Math.round(h * 0.45);
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const head = j < h * 0.3, dx = (i - w / 2) / (w / 2), dy = (j - h * 0.15) / (h * 0.15);
+    const inHead = head && dx * dx + dy * dy < 1;
+    const inBody = !head && i > w * 0.15 && i < w * 0.85;
+    if (inHead || inBody) img.data.set([...color, 255], ((y + j) * img.width + x + i) * 4);
+  }
+}
+function fill(img: PixelImage, c: [number, number, number]) { for (let i = 0; i < img.data.length; i += 4) img.data.set([...c, 255], i); }
+
+test('checkerboard fake transparency is detected and removed, including enclosed pockets', () => {
+  const img = createImage(120, 120);
+  for (let y = 0; y < 120; y++) for (let x = 0; x < 120; x++) {
+    const c = ((x >> 3) + (y >> 3)) & 1 ? 204 : 255;
+    img.data.set([c, c, c, 255], (y * 120 + x) * 4);
+  }
+  // a ring (donut) character: its hole shows the checkerboard
+  for (let y = 0; y < 120; y++) for (let x = 0; x < 120; x++) {
+    const d = Math.hypot(x - 60, y - 60);
+    if (d < 40 && d > 18) img.data.set([180, 40, 60, 255], (y * 120 + x) * 4);
+  }
+  const bg = estimateBackground(img)!;
+  assert.equal(bg.kind, 'checker');
+  const out = removeBackground(img, bg, 0.09, true);
+  assert.equal(out.data[(60 * 120 + 60) * 4 + 3], 0, 'hole cleared');
+  assert.equal(out.data[(60 * 120 + 30) * 4 + 3], 255, 'ring kept');
+  assert.equal(out.data[3], 0, 'corner cleared');
+});
+
+test('splitSheet: labels dropped, touching poses separated, rows kept', () => {
+  const img = createImage(400, 260);
+  // row 1: four poses, the last two touching
+  pose(img, 10, 10, 90, [60, 60, 200]); pose(img, 90, 10, 90, [60, 60, 200]);
+  pose(img, 180, 10, 90, [60, 60, 200]); pose(img, 220, 10, 90, [60, 60, 200]);
+  // a text label under the row
+  for (let y = 108; y < 114; y++) for (let x = 12; x < 60; x++) if (x % 4) img.data.set([0, 0, 0, 255], (y * 400 + x) * 4);
+  // row 2: three poses
+  pose(img, 10, 150, 90, [200, 60, 60]); pose(img, 110, 150, 90, [200, 60, 60]); pose(img, 210, 150, 90, [200, 60, 60]);
+  const s = splitSheet(img);
+  assert.equal(s.rects.length, 7, `got ${s.rects.length}`);
+  assert.deepEqual(s.rows.map(r => r.length), [4, 3]);
+  assert.ok(s.dropped >= 1, 'label dropped');
+});
+
+test('prepareSheet + pixelize: AI sheet on chroma green becomes uniform frames; size drift fixed', () => {
+  const img = createImage(520, 200);
+  fill(img, [0, 255, 0]);
+  const heights = [150, 150, 172, 150]; // frame 3 drawn ~15% bigger, as AI does
+  heights.forEach((h, i) => pose(img, 20 + i * 125, 190 - h, h, [90, 50, 160]));
+  const prep = prepareSheet(img, { background: 'auto', tolerance: 0.09, holes: 'auto' });
+  assert.equal(prep.frames.length, 4);
+  assert.equal(prep.background?.kind, 'solid');
+  const r = pixelize(prep.frames, { ...DEFAULT_PIXELIZE, background: 'none', bible: [], targetHeight: 40, palette: 'auto', colors: 4 });
+  assert.equal(new Set(r.frames.map(f => `${f.width}x${f.height}`)).size, 1);
+  const hs = r.frames.map(f => contentBounds(f, 128)!.h);
+  assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `heights ${hs}`);
+  assert.equal(assessResult(r, 16).issues.filter(i => i.severity !== 'info').length, 0);
+  // without normalization the quality report catches the outlier
+  const raw = pixelize(prep.frames, { ...DEFAULT_PIXELIZE, background: 'none', bible: [], targetHeight: 40, palette: 'auto', colors: 4, normalizeSize: false });
+  const q = assessResult(raw, 16);
+  assert.ok(q.issues.some(i => i.message.includes('different size') && i.frames?.includes(2)), JSON.stringify(q.issues));
+});
+
+test('removeOrphans leaves solid shapes alone', () => {
+  const img = createImage(10, 10);
+  for (let y = 2; y < 8; y++) for (let x = 2; x < 8; x++) img.data.set([10, 10, 10, 255], (y * 10 + x) * 4);
+  img.data.set([10, 10, 10, 255], (0 * 10 + 9) * 4); // lone speck
+  const out = removeOrphans(img);
+  assert.equal(out.data[(0 * 10 + 9) * 4 + 3], 0);
+  assert.equal(countColors(out).get('#0a0a0a'), 36);
+});
+
+test('outline is detected so it is never doubled', () => {
+  const img = createImage(20, 20);
+  for (let y = 4; y < 16; y++) for (let x = 4; x < 16; x++) img.data.set([200, 150, 90, 255], (y * 20 + x) * 4);
+  assert.equal(hasOutline(img), false);
+  const withLine = addOutline(img, '#101010');
+  assert.equal(hasOutline(withLine), true);
 });

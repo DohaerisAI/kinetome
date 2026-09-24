@@ -9,6 +9,17 @@ npm test           # core tests
 npm run typecheck
 ```
 
+## The AI workflow (no drawing skills needed)
+
+1. **Prompt Kit** tab: describe the character once. Copy the **Reference** prompt into your image generator (ChatGPT, Gemini, Midjourney, …) and regenerate until you love the design.
+2. Drop the chosen image on the studio: it becomes the character (pick an idle motion for it).
+3. Back in the Prompt Kit, select the character. For each move (walk, run, jump, attack, hurt, death, …) copy its prompt, attach the reference image in the generator, then click **Import…** on that card and pick the result.
+4. The importer splits the sheet into poses, cleans it, and **adds it to the character** with the same palette, size and feet position. Same-named animations are replaced, so regenerating a bad walk just swaps it.
+
+Prompts ask for one row of poses on flat green with no text, which is what the importer handles best. It also copes with what generators do anyway: fake checkerboard "transparency", white backdrops, text labels, uneven spacing, poses drawn at different sizes, JPEG noise. Every import shows a quality score and flags suspicious frames in the frame strip; reorder, delete, or split frames into named animations before saving.
+
+Try it with `samples/ai-sheets/` (add them to the Wizard).
+
 ## Pixelize: images, GIFs, video → animated pixel sprites
 
 Drop any of these on the studio (or use **Import…**):

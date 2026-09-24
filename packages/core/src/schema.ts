@@ -33,6 +33,8 @@ export const SpriteAsset = z.object({
   pivot: z.object({ x: z.number().int(), y: z.number().int() }),
   animations: z.array(Animation),
   tags: z.array(z.string()).default([]),
+  /** What the character/object looks like; feeds the Prompt Kit and generators. */
+  description: z.string().default(''),
   /** True when this asset is approved as a style reference for future generation. */
   reference: z.boolean().default(false),
   createdAt: z.string(),

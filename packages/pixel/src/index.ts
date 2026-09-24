@@ -6,4 +6,6 @@ export * from './cleanup.ts';
 export * from './anchor.ts';
 export * from './loop.ts';
 export * from './motion.ts';
+export * from './split.ts';
 export * from './pipeline.ts';
+export * from './quality.ts';

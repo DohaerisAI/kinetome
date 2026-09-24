@@ -95,6 +95,11 @@ export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelet
             <span className="mono dim">{asset.pivot.x},{asset.pivot.y} · {asset.frameWidth}×{asset.frameHeight}</span>
           </label>
         </div>
+        <label className="field">
+          <span>Description (Prompt Kit uses this)</span>
+          <textarea key={asset.id} rows={2} defaultValue={asset.description} placeholder="What it looks like: body, clothes, colors, details"
+            onBlur={e => e.target.value !== asset.description && patch({ description: e.target.value })} />
+        </label>
         <label className="toggle block" title="Approved assets are fed to generators as style references">
           <input type="checkbox" checked={asset.reference} onChange={e => patch({ reference: e.target.checked })} />
           Style reference for this project

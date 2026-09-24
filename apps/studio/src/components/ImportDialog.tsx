@@ -131,7 +131,7 @@ export function ImportDialog({ files, style, onCancel, onImport, onError, onPixe
         name: name.trim() || 'sprite', kind, source: 'imported',
         frameWidth: sheet.cellW, frameHeight: sheet.cellH, frames: rects,
         pivot: sheet.pivot ?? { x: Math.floor(sheet.cellW / 2), y: sheet.cellH - 1 },
-        animations: sheet.animations, tags: [], reference: false,
+        animations: sheet.animations, tags: [], description: '', reference: false,
       };
       await onImport(draft, await canvasToPng(canvas));
     } catch (e) { onError(e); } finally { setBusy(false); }

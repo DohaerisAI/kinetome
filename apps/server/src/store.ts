@@ -140,7 +140,7 @@ export async function seedIfEmpty(): Promise<void> {
     version: 1, id, name: 'Wizard', kind: 'character', source: 'code', image: 'sheet.png',
     frameWidth: parsed.cellW, frameHeight: parsed.cellH, frames: parsed.frames.map(f => f.rect),
     pivot: parsed.pivot ?? { x: Math.floor(parsed.cellW / 2), y: parsed.cellH - 1 },
-    animations: parsed.animations, tags: ['sample'], reference: true, createdAt: now, updatedAt: now,
+    animations: parsed.animations, tags: ['sample'], description: 'An old wizard in a tall bent purple hat with a gold band, long white beard, purple robe with gold trim, holding a wooden staff with a glowing cyan gem.', reference: true, createdAt: now, updatedAt: now,
   };
   await mkdir(assetDir(project.id, id), { recursive: true });
   await copyFile(join(SAMPLES, 'wizard', 'wizard.png'), sheetPath(project.id, id));

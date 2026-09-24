@@ -54,3 +54,27 @@ export function addOutline(img: PixelImage, hex: string): PixelImage {
     }
   return out;
 }
+
+/**
+ * True when the silhouette is already outlined: most edge pixels are among the darkest
+ * colors of the sprite. Used so "add outline" never doubles an existing one.
+ */
+export function hasOutline(img: PixelImage): boolean {
+  const { width: W, height: H, data } = img;
+  const lum = (i: number) => 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  const op = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && data[(y * W + x) * 4 + 3] >= 128;
+  const all: number[] = [], edge: number[] = [], inner: number[] = [];
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      if (!op(x, y)) continue;
+      const l = lum((y * W + x) * 4);
+      all.push(l);
+      if (!op(x - 1, y) || !op(x + 1, y) || !op(x, y - 1) || !op(x, y + 1)) edge.push(l); else inner.push(l);
+    }
+  if (all.length < 16 || !edge.length || !inner.length) return false;
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  if (mean(edge) > mean(inner) - 25) return false; // the rim must be clearly darker than the body
+  all.sort((a, b) => a - b);
+  const dark = all[Math.floor(all.length * 0.3)];
+  return edge.filter(l => l <= dark).length / edge.length >= 0.6;
+}

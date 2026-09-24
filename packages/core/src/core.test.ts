@@ -91,7 +91,7 @@ test('lint flags off-palette and semi-alpha, fixes resolve them', () => {
   const asset: SpriteAsset = {
     version: 1, id: 'x', name: 'x', kind: 'prop', source: 'imported', image: 'sheet.png',
     frameWidth: 16, frameHeight: 16, frames: [{ x: 0, y: 0, w: 16, h: 16 }], pivot: { x: 8, y: 15 },
-    animations: [{ name: 'default', frames: [0], fps: 10, loop: true }], tags: [], reference: false, createdAt: '', updatedAt: '',
+    animations: [{ name: 'default', frames: [0], fps: 10, loop: true }], tags: [], description: '', reference: false, createdAt: '', updatedAt: '',
   };
   const before = lintAsset(img, asset, DEFAULT_STYLE);
   assert.deepEqual(before.issues.map(i => i.code).sort(), ['off-palette', 'semi-alpha']);
@@ -119,7 +119,7 @@ test('Godot export: SpriteFrames .tres + AnimatedSprite2D .tscn', async () => {
   const asset: SpriteAsset = {
     version: 1, id: 'wizard', name: 'Old Wizard', kind: 'character', source: 'code', image: 'sheet.png',
     frameWidth: p.cellW, frameHeight: p.cellH, frames: p.frames.map(f => f.rect), pivot: { x: 20, y: 50 },
-    animations: p.animations, tags: [], reference: true, createdAt: '', updatedAt: '',
+    animations: p.animations, tags: [], description: '', reference: true, createdAt: '', updatedAt: '',
   };
   const files = godotFiles(asset, new Uint8Array([1, 2, 3]), 'art/sprites');
   assert.deepEqual(files.map(f => f.path), ['art/sprites/wizard/wizard.png', 'art/sprites/wizard/wizard.tres', 'art/sprites/wizard/wizard.tscn']);
@@ -145,4 +145,19 @@ test('zip writer produces a valid archive', async () => {
   assert.equal(dv.getUint32(0, true), 0x04034b50);
   assert.equal(dv.getUint32(z.length - 22, true), 0x06054b50);
   assert.equal(dv.getUint16(z.length - 22 + 10, true), 1);
+});
+
+test('Prompt Kit: prompts carry style, layout and per-frame poses', async () => {
+  const { referencePrompt, animationPrompt, PLATFORMER_MOVES } = await import('./index.ts');
+  const c = { name: 'Mira', description: 'a small fox knight with a red scarf and a round shield' };
+  const ref = referencePrompt(DEFAULT_STYLE, c);
+  assert.match(ref, /fox knight/);
+  assert.match(ref, /#00FF00/);
+  assert.match(ref, /32 pixels tall/);
+  const walk = PLATFORMER_MOVES.find(m => m.id === 'walk')!;
+  const p = animationPrompt(DEFAULT_STYLE, c, walk);
+  assert.match(p, /exactly 8 frames in ONE horizontal row/);
+  assert.match(p, /\n8\. up: pushing off left toes/);
+  assert.match(p, /No text, no labels/);
+  assert.ok(PLATFORMER_MOVES.every(m => m.poses.length === m.frames), 'pose list matches frame count');
 });
