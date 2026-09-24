@@ -14,6 +14,7 @@ function designContext(style: StyleBible, d: CharacterDesign): string {
     d.build && `Build: ${d.build}`,
     d.outfit && `Outfit: ${d.outfit}`,
     d.details && `Signature details: ${d.details}`,
+    d.invariants.length && `Must never change (every frame): ${d.invariants.join('; ')}`,
     d.personality && `Personality: ${d.personality}`,
     d.lore && `Lore: ${d.lore}`,
     d.parts.length && `Color parts: ${d.parts.map(p => `${p.name} (${p.color})`).join(', ')}`,
@@ -24,7 +25,7 @@ function designContext(style: StyleBible, d: CharacterDesign): string {
 
 // ---------- 1. polish the visual description ----------
 
-export async function polishDescription(style: StyleBible, d: CharacterDesign, model: Model): Promise<ClaudeResult<{ description: string; referencePose: string }>> {
+export async function polishDescription(style: StyleBible, d: CharacterDesign, model: Model): Promise<ClaudeResult<{ description: string; referencePose: string; invariants: string[]; conflicts: string[] }>> {
   return runClaude({
     task: 'describe', model, timeoutMs: 90_000,
     system: 'You are the art director of a pixel-art game. You turn character notes into short, concrete visual descriptions that image generators follow reliably. Reply only through the structured output.',
@@ -34,18 +35,24 @@ export async function polishDescription(style: StyleBible, d: CharacterDesign, m
       'Write:',
       `1. description: at most 70 words, purely visual (silhouette, proportions, each clothing piece and which color part it uses, hairstyle, face, signature details). Keep only details that still read at ${d.pixelHeight}px tall; merge or drop tiny ones. Show personality through posture/expression words. No lore prose, no hex codes (colors are listed separately).`,
       '2. referencePose: one short line for the reference image pose that shows the silhouette and weapon clearly (side view facing right).',
+      '3. invariants: 2 to 6 short, concrete, checkable rules for features an image generator tends to forget between frames: missing or artificial limbs (and WHICH side), scars and eye patches (which side), weapons and where they are carried, asymmetric clothing, hair shape, body proportions. Name sides as the character\'s own left/right. Each rule must be visible in a drawing, e.g. "Left leg is a wooden peg from the knee down; never draw a normal left foot". Keep the user\'s existing rules if they are still correct.',
+      '4. conflicts: short warnings where the color parts contradict the notes (e.g. "Outfit says white robe but Main cloth is blue #3d5aa8"), or a feature in the notes has no color part. Empty if consistent. Follow the NOTES in the description (they are the user\'s intent), not a contradicting color.',
       d.description ? 'Improve the current description rather than replacing what the user clearly wants.' : '',
     ].join('\n'),
     schema: {
-      type: 'object', additionalProperties: false, required: ['description', 'referencePose'],
-      properties: { description: { type: 'string' }, referencePose: { type: 'string' } },
+      type: 'object', additionalProperties: false, required: ['description', 'referencePose', 'invariants', 'conflicts'],
+      properties: {
+        description: { type: 'string' }, referencePose: { type: 'string' },
+        invariants: { type: 'array', minItems: 1, maxItems: 6, items: { type: 'string' } },
+        conflicts: { type: 'array', maxItems: 6, items: { type: 'string' } },
+      },
     },
   });
 }
 
 // ---------- 2. draft a move frame by frame ----------
 
-export async function draftMove(style: StyleBible, d: CharacterDesign, m: MoveDraft, model: Model, instruction?: string): Promise<ClaudeResult<{ poses: string[]; tip: string }>> {
+export async function draftMove(style: StyleBible, d: CharacterDesign, m: MoveDraft, model: Model, instruction?: string): Promise<ClaudeResult<{ poses: string[]; notes: string }>> {
   const preset = PLATFORMER_MOVES.find(p => p.id === m.id);
   return runClaude({
     task: 'move', model, timeoutMs: 90_000,
@@ -59,15 +66,19 @@ export async function draftMove(style: StyleBible, d: CharacterDesign, m: MoveDr
       m.poses.length && instruction ? `Current poses:\n${m.poses.map((p, i) => `${i + 1}. ${p}`).join('\n')}` : '',
       instruction ? `Revise the poses according to this request: ${instruction}` : '',
       '',
-      `Write exactly ${m.frames} poses, one per frame, each at most 28 words: body lean, legs, arms, weapon/hands, head, and any effect (smear, dust, spark) for that frame.`,
-      'The character faces right in every frame and stays in place (no travel). Make the key frame (the hit, the peak) unmistakable as a silhouette.',
-      'Also write tip: one sentence the image generator should keep in mind for this move.',
+      m.notes && instruction ? `Current direction notes: ${m.notes}` : '',
+      '',
+      'First think about how THIS character\'s body, gear and story change the move (a wooden leg makes a walk limp and stiff on that side; a heavy weapon slows the wind-up; an arrogant personality shows in posture). Put that in notes: at most 60 words of direction for the image generator.',
+      `Then write exactly ${m.frames} poses, one per frame, each at most 32 words: body lean, legs, arms, weapon/hands, head, and any effect (smear, dust, spark).`,
+      'In a side view facing right, the character\'s LEFT side is the near side (towards the viewer). Name limbs as "near/far" plus the character\'s own left/right so nothing gets mirrored.',
+      d.invariants.length ? `Whenever a pose shows a body part covered by the must-never-change rules, state that feature explicitly in that pose (e.g. "far right leg forward, near wooden peg (left leg) planted stiff") so the generator cannot drop it.` : '',
+      'The character faces right in every frame, stays in place (no travel) and keeps the same size; only natural bob changes the height. Make the key frame (the hit, the peak) unmistakable as a silhouette.',
     ].filter(Boolean).join('\n'),
     schema: {
-      type: 'object', additionalProperties: false, required: ['poses', 'tip'],
+      type: 'object', additionalProperties: false, required: ['notes', 'poses'],
       properties: {
+        notes: { type: 'string' },
         poses: { type: 'array', minItems: m.frames, maxItems: m.frames, items: { type: 'string' } },
-        tip: { type: 'string' },
       },
     },
   });
@@ -127,6 +138,7 @@ export async function writeProgram(style: StyleBible, d: CharacterDesign, anims:
       'Draw this character:',
       d.description || rawBrief(d) || d.name,
       d.details && `Signature details: ${d.details}`,
+      d.invariants.length && `Must be visible in every frame: ${d.invariants.join('; ')}`,
       '',
       'Animations to implement (exact names):',
       animLines(anims),

@@ -2,7 +2,7 @@ import { countColors, hardenAlpha, snapToPalette, type PixelImage, type Rect } f
 import { anchorFrames, type Anchor } from './anchor.ts';
 import { estimateBackground, isChroma, removeBackground, type Background, type RGB } from './background.ts';
 import { addOutline, hasOutline, removeOrphans } from './cleanup.ts';
-import { contentBounds, crop, pad } from './image.ts';
+import { bodyHeight, contentBounds, crop, pad } from './image.ts';
 import { mapPaletteTo, sharedPalette } from './palette.ts';
 import { detectPixelScale, gridAt, resize, sampleGrid, type GridGuess } from './scale.ts';
 import { splitSheet } from './split.ts';
@@ -129,20 +129,35 @@ export function pixelize(input: PixelImage[], o: PixelizeOptions): PixelizeResul
   } else mode = o.mode;
   if (mode === 'grid' && !grids[0]) mode = 'illustration';
 
-  // 3. true pixels from each frame's grid
-  if (mode === 'grid') frames = frames.map((f, i) => sampleGrid(f, grids[i]!));
+  // Size drift is judged on BODY height (weapons/hair ignored). Under 6% is natural motion
+  // (walk bob); over 20% is intentional (crouch, jump); in between the generator drew the
+  // character at the wrong size and it gets corrected.
+  const drift = (r: number) => Math.abs(r - 1) >= 0.06 && Math.abs(r - 1) <= 0.2;
 
-  // 4. size drift: rescale outlier frames to the median height (illustration only;
-  //    per-frame grids already normalise grid mode)
+  // 3. true pixels from each frame's grid; off-size frames are re-sampled from the source
+  //    at a corrected block size (cleaner than scaling finished pixel art)
+  if (mode === 'grid') {
+    const sources = frames;
+    frames = frames.map((f, i) => sampleGrid(f, grids[i]!));
+    if (o.normalizeSize && frames.length > 2) {
+      const hs = frames.map(bodyHeight), mh = median(hs.filter(h => h > 0));
+      frames = frames.map((f, i) => {
+        const r = hs[i] / mh;
+        if (!hs[i] || !drift(r)) return f;
+        grids[i] = gridAt(sources[i], grids[i]!.scale * r);
+        return sampleGrid(sources[i], grids[i]!);
+      });
+    }
+  }
+
+  // 4. illustration: rescale off-size frames to the median body height
   if (o.normalizeSize && mode === 'illustration' && frames.length > 2) {
-    const hs = frames.map(f => contentBounds(f, 128)?.h ?? 0);
-    const mh = median(hs.filter(h => h > 0));
+    const hs = frames.map(bodyHeight), mh = median(hs.filter(h => h > 0));
     frames = frames.map((f, i) => {
       const r = hs[i] ? mh / hs[i] : 1;
-      if (Math.abs(r - 1) < 0.08 || Math.abs(r - 1) > 0.5) return f; // small = natural motion; huge = intentional
+      if (!drift(1 / r)) return f;
       const b = contentBounds(f, 128)!;
-      const c = crop(f, b);
-      return resize(c, Math.max(1, Math.round(b.w * r)), Math.max(1, Math.round(b.h * r)), o.resample);
+      return resize(crop(f, b), Math.max(1, Math.round(b.w * r)), Math.max(1, Math.round(b.h * r)), o.resample);
     });
   }
 

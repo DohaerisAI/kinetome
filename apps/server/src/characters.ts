@@ -68,8 +68,11 @@ characters.post('/projects/:p/characters/:c/describe', async c => {
   const [{ style }, d] = await Promise.all([store.getProject(p), store.getCharacter(p, id)]);
   const r = await polishDescription(style, d, modelOf(model));
   await logUsage(store.projectPath(p), 'describe', r);
-  const saved = await store.saveCharacter(p, id, { ...d, description: r.data.description.trim(), referencePose: r.data.referencePose.trim() });
-  return c.json({ design: saved, usage: r.usage });
+  const saved = await store.saveCharacter(p, id, {
+    ...d, description: r.data.description.trim(), referencePose: r.data.referencePose.trim(),
+    invariants: r.data.invariants.map(x => x.trim()).filter(Boolean),
+  });
+  return c.json({ design: saved, conflicts: r.data.conflicts ?? [], usage: r.usage });
 });
 
 characters.post('/projects/:p/characters/:c/moves/:m/draft', async c => {
@@ -81,8 +84,8 @@ characters.post('/projects/:p/characters/:c/moves/:m/draft', async c => {
   const r = await draftMove(style, d, move, modelOf(model), instruction?.trim() || undefined);
   await logUsage(store.projectPath(p), 'move', r);
   const poses = r.data.poses.slice(0, move.frames).map(s => s.trim());
-  const saved = await store.saveCharacter(p, id, { ...d, moves: d.moves.map(x => (x.id === mid ? { ...x, poses } : x)) });
-  return c.json({ design: saved, tip: r.data.tip, usage: r.usage });
+  const saved = await store.saveCharacter(p, id, { ...d, moves: d.moves.map(x => (x.id === mid ? { ...x, poses, notes: r.data.notes.trim() } : x)) });
+  return c.json({ design: saved, usage: r.usage });
 });
 
 /** Render code as-is (after manual edits, or to preview the saved program). */

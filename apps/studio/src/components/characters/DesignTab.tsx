@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { PART_PRESETS, partSlug, rampFor, rawBrief } from '@sprite/core';
 import { api } from '../../api.ts';
 import { Icon } from '../../icons.tsx';
@@ -5,6 +6,7 @@ import { ColorField } from '../ColorWheel.tsx';
 import { ClaudeButton, Field, type TabProps } from './shared.tsx';
 
 export function DesignTab({ projectId, style, design: d, model, update, runClaude, busy, onNext }: TabProps & { onNext: () => void }) {
+  const [conflicts, setConflicts] = useState<string[]>([]);
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => update({ ...d, [k]: v });
   const used = new Set(d.parts.map(p => partSlug(p.name)));
   const dupes = d.parts.filter((p, i) => d.parts.findIndex(q => partSlug(q.name) === partSlug(p.name)) !== i);
@@ -72,12 +74,34 @@ export function DesignTab({ projectId, style, design: d, model, update, runClaud
           <ClaudeButton
             label={d.description ? 'Improve with Claude' : 'Write with Claude'} busyLabel="Claude is writing…" busy={busy === 'describe'}
             disabled={!canPolish} title={canPolish ? 'Turns the notes above into a short, generator-friendly description (~1-2k tokens)' : 'Fill in some of the notes above first'}
-            onClick={() => runClaude('describe', () => api.describe(projectId, d.id, model))}
+            onClick={() => runClaude('describe', () => api.describe(projectId, d.id, model)).then(r => setConflicts(r?.conflicts ?? []))}
           />
         </div>
+        {conflicts.map((c, i) => (
+          <div key={i} className="issue warn small">
+            <span><strong>Color mismatch:</strong> {c}</span>
+            <button className="small" onClick={() => setConflicts(list => list.filter((_, k) => k !== i))}>Dismiss</button>
+          </div>
+        ))}
+        {conflicts.length > 0 && <p className="dim small">Fix the part colors above so the prompt never contradicts itself; Gemini picks randomly between contradictions.</p>}
         <textarea rows={3} value={d.description} onChange={e => set('description', e.target.value)}
           placeholder={rawBrief(d) || 'A short visual description: silhouette, proportions, clothing pieces, hairstyle, signature details.'} />
         <Field label="Reference pose"><input value={d.referencePose} onChange={e => set('referencePose', e.target.value)} /></Field>
+        <div className="invariants">
+          <div className="card-head">
+            <h3>Never changes</h3>
+            <span className="dim small">checked by the generator in every frame: missing or special limbs (which side), scars, weapons, asymmetric clothing</span>
+          </div>
+          {d.invariants.map((rule, i) => (
+            <div key={i} className="inv-row">
+              <Icon name="check" />
+              <input value={rule} onChange={e => set('invariants', d.invariants.map((r, k) => (k === i ? e.target.value : r)))} aria-label={`Rule ${i + 1}`} />
+              <button className="icon-btn" onClick={() => set('invariants', d.invariants.filter((_, k) => k !== i))} aria-label="Remove rule"><Icon name="x" /></button>
+            </div>
+          ))}
+          <button className="chip" onClick={() => set('invariants', [...d.invariants, ''])}><Icon name="plus" size={12} /> Add rule</button>
+          {!d.invariants.length && <span className="dim small"> e.g. "Left leg is a wooden peg from the knee down; never draw a normal left foot". Claude suggests these when it writes the brief.</span>}
+        </div>
         <div className="btnrow end">
           <button className="primary" onClick={onNext}>Next: reference sprite <Icon name="chevronRight" /></button>
         </div>

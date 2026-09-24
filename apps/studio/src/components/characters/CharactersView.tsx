@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CharacterDesign, SpriteAsset, StyleBible } from '@sprite/core';
+import { lintAsset, type CharacterDesign, type SpriteAsset, type StyleBible } from '@sprite/core';
 import { api, type Model, type Usage } from '../../api.ts';
 import { Icon, type IconName } from '../../icons.tsx';
-import { useImage } from '../../pixels.ts';
+import { loadImage, toPixels, useImage } from '../../pixels.ts';
 import { FrameThumb } from '../FrameThumb.tsx';
 import { CodeTab } from './CodeTab.tsx';
 import { DesignTab } from './DesignTab.tsx';
@@ -120,7 +120,18 @@ export function CharactersView({ projectId, style, assets, model, onUsage, onImp
       onDone: asset => {
         // read the newest copy at completion time; the import may finish long after it started
         const fresh = latest.current.find(d => d.id === design.id) ?? design;
-        if (fresh.assetId !== asset.id) update({ ...fresh, assetId: asset.id });
+        const link = (pixelHeight: number) => {
+          const cur = latest.current.find(d => d.id === design.id) ?? fresh;
+          if (cur.assetId !== asset.id || cur.pixelHeight !== pixelHeight) update({ ...cur, assetId: asset.id, pixelHeight });
+        };
+        // The reference defines the real size: prompts must quote it, or Gemini gets told
+        // "40px" while looking at a 100px reference.
+        if (req.anim === 'idle' || !fresh.assetId) {
+          loadImage(api.sheetUrl(projectId, asset)).then(img => {
+            const h = lintAsset(toPixels(img), asset, style).stats.contentHeight;
+            link(h >= 12 && h <= 256 ? h : fresh.pixelHeight);
+          }, () => link(fresh.pixelHeight));
+        } else link(fresh.pixelHeight);
       },
     });
   };

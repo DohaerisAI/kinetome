@@ -86,6 +86,8 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
   const worker = useRef<Worker | null>(null);
   const ids = useRef({ prep: 0, run: 0, loop: 0 });
   const animHint = useRef(initialAnim ?? null);
+  const designRef = useRef(design ?? null);
+  const expectedFrames = initialAnim ? design?.moves.find(x => x.id === initialAnim)?.frames : undefined;
 
   const set = useCallback(<K extends keyof PixelizeOptions>(k: K, v: PixelizeOptions[K]) => setOpts(o => ({ ...o, [k]: v })), []);
   const isStill = !!src && src.frames.length === 1;
@@ -103,10 +105,14 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
         setPrepared(p);
         setOrder(Array.from({ length: p.count }, (_, i) => i));
         const hint = animHint.current ? presetFor(animHint.current) : undefined;
-        setSegments(p.rows.map((row, i) => ({
-          name: p.rows.length === 1 && animHint.current ? animHint.current : p.count === 1 ? 'idle' : p.rows.length === 1 ? 'default' : `row${i + 1}`,
-          start: row[0] ?? 0, fps: hint?.fps ?? 10, loop: hint?.loop ?? true,
-        })));
+        const move = animHint.current ? designRef.current?.moves.find(x => x.id === animHint.current) : undefined;
+        // Imported for a specific move: the whole grid is that one animation, rows read in order.
+        setSegments(animHint.current
+          ? [{ name: animHint.current, start: 0, fps: move?.fps ?? hint?.fps ?? 10, loop: move?.loop ?? hint?.loop ?? true }]
+          : p.rows.map((row, i) => ({
+            name: p.count === 1 ? 'idle' : p.rows.length === 1 ? 'default' : `row${i + 1}`,
+            start: row[0] ?? 0, fps: hint?.fps ?? 10, loop: hint?.loop ?? true,
+          })));
         setSelSeg(0);
         setAxis(p.count === 1 ? 'height' : 'none');
         return;
@@ -471,6 +477,11 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
                 </div>
               )}
 
+              {expectedFrames && !single && order.length !== expectedFrames && (
+                <div className="issue warn">
+                  Expected {expectedFrames} frames for "{initialAnim}", found {order.length}. {order.length > expectedFrames ? 'Delete the extra poses below' : 'Gemini dropped some; regenerate, or keep these if the motion still reads'}.
+                </div>
+              )}
               {report && report.issues.length > 0 && (
                 <>
                   <h3>Quality check</h3>

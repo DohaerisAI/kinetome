@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { designMovePrompt, newMove, PLATFORMER_MOVES, slugify, type MoveDraft } from '@sprite/core';
+import { designMovePrompt, layoutFor, newMove, PLATFORMER_MOVES, slugify, type MoveDraft } from '@sprite/core';
 import { api } from '../../api.ts';
 import { Icon } from '../../icons.tsx';
 import { ClaudeButton, CopyButton, Field, GeminiSteps, PromptBox, type TabProps } from './shared.tsx';
@@ -54,6 +54,7 @@ function MoveEditor({ projectId, style, design: d, assets, model, update, runCla
   const linked = d.assetId ? assets.find(a => a.id === d.assetId) : undefined;
   const posesReady = m.poses.length === m.frames && m.poses.every(p => p.trim());
   const prompt = designMovePrompt(style, d, m);
+  const grid = layoutFor(m.frames);
 
   const setFrames = (n: number) => {
     const frames = Math.max(1, Math.min(24, n || 1));
@@ -105,11 +106,16 @@ function MoveEditor({ projectId, style, design: d, assets, model, update, runCla
           <ClaudeButton label={m.poses.some(p => p.trim()) ? 'Redraft with Claude' : 'Draft with Claude'} busyLabel="Claude is choreographing…" busy={busy === 'move'} onClick={() => draft(false)}
             title="Claude breaks the move into key poses from your description (~1-2k tokens)" />
         </div>
+        {(m.notes || m.poses.length > 0) && (
+          <Field label="Direction for this character" hint="how their body & story shape the move; goes into the prompt">
+            <textarea rows={2} value={m.notes} onChange={e => setMove({ notes: e.target.value })} placeholder="e.g. The peg leg makes the walk uneven: the peg lands stiff with no knee bend, the body dips on the good leg" />
+          </Field>
+        )}
         {m.poses.length ? (
           <ol className="poses">
             {Array.from({ length: m.frames }, (_, i) => (
               <li key={i}>
-                <span className="pose-n">{i + 1}</span>
+                <span className="pose-n" title={grid.rows > 1 ? `row ${Math.floor(i / grid.cols) + 1}, column ${(i % grid.cols) + 1} in the Gemini grid` : undefined}>{i + 1}</span>
                 <textarea rows={2} value={m.poses[i] ?? ''} onChange={e => { const poses = [...m.poses]; while (poses.length < m.frames) poses.push(''); poses[i] = e.target.value; setMove({ poses }); }} aria-label={`Frame ${i + 1} pose`} />
               </li>
             ))}
@@ -129,6 +135,7 @@ function MoveEditor({ projectId, style, design: d, assets, model, update, runCla
           {!posesReady && <span className="badge warn">fill all {m.frames} poses first</span>}
           {imported && <span className="badge ok">in library</span>}
         </div>
+        <p className="dim small">Gemini gets {grid.rows > 1 ? `a ${grid.rows} × ${grid.cols} grid (it won't draw ${m.frames} poses in one row reliably)` : `one row of ${m.frames}`}; the importer reads it back as a single "{m.id}" animation in the right order.</p>
         <GeminiSteps withReference />
         <div className="btnrow">
           <CopyButton text={prompt} />

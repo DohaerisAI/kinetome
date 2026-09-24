@@ -111,6 +111,8 @@ export const MoveDraft = z.object({
   weight: z.enum(['light', 'normal', 'heavy']).default('normal'),
   /** One pose per frame; drafted by Claude or typed by the user. */
   poses: z.array(z.string()).default([]),
+  /** How this character's body and story shape the move (e.g. a peg leg makes the walk limp). */
+  notes: z.string().default(''),
 });
 export type MoveDraft = z.infer<typeof MoveDraft>;
 
@@ -125,6 +127,8 @@ export const CharacterDesign = z.object({
   parts: z.array(DesignPart).default([]),
   outline: Hex.nullable().default('#1a1420'),
   pixelHeight: z.number().int().min(12).max(256),
+  /** Features that must look identical in every frame (checked by the generator), e.g. "left leg is a wooden peg". */
+  invariants: z.array(z.string()).default([]),
   /** Visual description used in every prompt (Claude-polished, user-editable). */
   description: z.string().default(''),
   referencePose: z.string().default('neutral standing idle pose, full body, facing right'),

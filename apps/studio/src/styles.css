@@ -227,6 +227,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 1px
 .sf-tools .icon { padding: 0 3px; font-size: 10px; }
 
 /* ============ characters ============ */
+.invariants { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.invariants .card-head { margin-bottom: 4px; }
+.inv-row { display: flex; gap: 8px; align-items: center; width: 100%; }
+.inv-row > svg { color: var(--ok); flex: none; }
+.inv-row input { flex: 1; }
 .chars { flex: 1; display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
 .chars-side { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
 .char-row { width: 100%; display: flex; gap: 10px; align-items: center; background: transparent; border: 0; border-left: 2px solid transparent; border-radius: 0; padding: 8px 12px; text-align: left; }

@@ -57,9 +57,9 @@ export const api = {
   createCharacter: (p: string, name: string) => call<CharacterDesign>(`/projects/${p}/characters`, json({ name })),
   saveCharacter: (p: string, d: CharacterDesign) => call<CharacterDesign>(`/projects/${p}/characters/${d.id}`, { ...json(d), method: 'PUT' }),
   deleteCharacter: (p: string, id: string) => call<void>(`/projects/${p}/characters/${id}`, { method: 'DELETE' }),
-  describe: (p: string, id: string, model: Model) => call<{ design: CharacterDesign; usage: Usage }>(`/projects/${p}/characters/${id}/describe`, json({ model })),
+  describe: (p: string, id: string, model: Model) => call<{ design: CharacterDesign; conflicts: string[]; usage: Usage }>(`/projects/${p}/characters/${id}/describe`, json({ model })),
   draftMove: (p: string, id: string, move: string, model: Model, instruction?: string) =>
-    call<{ design: CharacterDesign; tip: string; usage: Usage }>(`/projects/${p}/characters/${id}/moves/${move}/draft`, json({ model, instruction })),
+    call<{ design: CharacterDesign; usage: Usage }>(`/projects/${p}/characters/${id}/moves/${move}/draft`, json({ model, instruction })),
   renderCode: (p: string, id: string, code: string) =>
     call<{ ok: true; packed: Packed; preview: string } | { ok: false; error: string }>(`/projects/${p}/characters/${id}/code/render`, json({ code })),
   /** Streams the write -> render -> review loop. Resolves when the stream ends. */

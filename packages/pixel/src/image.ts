@@ -61,3 +61,24 @@ export class LabCache {
 
 export const labDist = (a: [number, number, number], b: [number, number, number]) =>
   Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
+
+/**
+ * Height of the character's BODY: the span of rows that are substantially filled. Thin
+ * protrusions (a raised sword, a staff, a hair strand) don't count, so a pose holding a
+ * weapon overhead isn't mistaken for a character drawn at a bigger scale.
+ */
+export function bodyHeight(img: PixelImage): number {
+  const counts: number[] = [];
+  for (let y = 0; y < img.height; y++) {
+    let n = 0;
+    for (let x = 0; x < img.width; x++) if (img.data[(y * img.width + x) * 4 + 3] >= 128) n++;
+    counts.push(n);
+  }
+  const filled = counts.filter(c => c > 0).sort((a, b) => a - b);
+  if (!filled.length) return 0;
+  const typical = filled[Math.floor(filled.length / 2)];
+  const min = Math.max(2, typical * 0.3);
+  let top = -1, bottom = -1;
+  counts.forEach((c, y) => { if (c >= min) { if (top < 0) top = y; bottom = y; } });
+  return top < 0 ? 0 : bottom - top + 1;
+}

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { countColors, type PixelImage } from '@sprite/core';
 import {
-  addOutline, assessResult, hasOutline, prepareSheet, removeOrphans, splitSheet,
+  addOutline, assessResult, bodyHeight, hasOutline, prepareSheet, removeOrphans, splitSheet,
   anchorFrames, contentBounds, createImage, detectPixelScale, estimateBackground, findLoops, generateMotion,
   pickEvenly, pixelize, removeBackground, sampleGrid, DEFAULT_PIXELIZE,
 } from './index.ts';
@@ -220,7 +220,7 @@ test('prepareSheet + pixelize: AI sheet on chroma green becomes uniform frames; 
   // without normalization the quality report catches the outlier
   const raw = pixelize(prep.frames, { ...DEFAULT_PIXELIZE, background: 'none', bible: [], targetHeight: 40, palette: 'auto', colors: 4, normalizeSize: false });
   const q = assessResult(raw, 16);
-  assert.ok(q.issues.some(i => i.message.includes('different size') && i.frames?.includes(2)), JSON.stringify(q.issues));
+  assert.ok(q.issues.some(i => /body is \d+px tall/.test(i.message) && i.frames?.includes(2)), JSON.stringify(q.issues));
 });
 
 test('removeOrphans leaves solid shapes alone', () => {
@@ -238,4 +238,25 @@ test('outline is detected so it is never doubled', () => {
   assert.equal(hasOutline(img), false);
   const withLine = addOutline(img, '#101010');
   assert.equal(hasOutline(withLine), true);
+});
+
+test('a raised thin weapon is not mistaken for a bigger character', () => {
+  const { bodyHeight: bh } = { bodyHeight } as { bodyHeight: (i: PixelImage) => number };
+  const body = createImage(40, 80);
+  for (let y = 30; y < 78; y++) for (let x = 14; x < 26; x++) body.data.set([90, 50, 160, 255], (y * 40 + x) * 4);
+  const withSword = createImage(40, 80);
+  withSword.data.set(body.data);
+  for (let y = 2; y < 30; y++) withSword.data.set([220, 220, 230, 255], (y * 40 + 24) * 4); // 1px blade overhead
+  assert.equal(bh(body), 48);
+  assert.equal(bh(withSword), 48);
+  assert.equal(contentBounds(withSword, 128)!.h, 76);
+});
+
+test('grid mode re-samples a frame the generator drew too big', () => {
+  const base = tinySprite();
+  const frames = [4, 4, 4.6, 4].map(s => { const f = fakePixelArt(base, 4); return s === 4 ? f : fakePixelArt(base, s); });
+  // frame 3 has the same art at a bigger block size -> per-frame grid already handles it
+  const r = pixelize(frames, { ...DEFAULT_PIXELIZE, bible: [], targetHeight: 32, palette: 'auto', colors: 6 });
+  const hs = r.frames.map(f => contentBounds(f, 128)!.h);
+  assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `heights ${hs}`);
 });

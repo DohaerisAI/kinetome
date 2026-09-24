@@ -72,42 +72,87 @@ function formLines(style: StyleBible, d: CharacterDesign): string[] {
   return lines;
 }
 
-const LAYOUT = [
+const BACKDROP = [
   'Background: one flat, solid pure green (#00FF00) everywhere. No gradient, no texture, no checkerboard, no floor, no shadow under the character.',
   'No text, no labels, no numbers, no frame borders, no grid lines, no watermark.',
 ];
 
 const describe = (d: CharacterDesign) => (d.description.trim() || rawBrief(d) || '(describe the character in the Design tab)');
 
+/**
+ * Grid Gemini can actually produce: it will not reliably put more than 4 poses in a row,
+ * so longer moves become rows of 3-4 cells read left to right, top to bottom.
+ */
+export function layoutFor(frames: number): { rows: number; cols: number } {
+  if (frames <= 4) return { rows: 1, cols: frames };
+  if (frames <= 8) return { rows: 2, cols: Math.ceil(frames / 2) };
+  if (frames <= 12) return { rows: 3, cols: Math.ceil(frames / 3) };
+  return { rows: Math.ceil(frames / 4), cols: 4 };
+}
+
+function invariantLines(d: CharacterDesign, every: boolean): string[] {
+  const inv = d.invariants.map(s => s.trim()).filter(Boolean);
+  if (!inv.length) return [];
+  return [
+    every ? `NEVER CHANGES: these must be true in EVERY single frame, with no exceptions:` : 'Defining features (make them unmistakable):',
+    ...inv.map(s => `- ${s}`),
+  ];
+}
+
 /** Gemini prompt for the reference design (step 1). */
 export function designReferencePrompt(style: StyleBible, d: CharacterDesign): string {
   return [
     `Create a single pixel-art game sprite of ${d.name}.`,
     `The character: ${describe(d)}`,
+    ...invariantLines(d, false),
     `Pose: ${d.referencePose || 'neutral standing idle pose'}, full body visible from head to feet, centered.`,
     ...colorLines(d),
     ...formLines(style, d),
-    ...LAYOUT,
+    ...BACKDROP,
     'This image is the reference design for all of the character\'s animations, so keep the design clear, readable and simple enough to redraw consistently.',
   ].join('\n');
 }
 
-/** Gemini prompt for one animation sheet (step 2); poses come from the move draft. */
+/**
+ * Gemini prompt for one animation sheet (step 2). Structured so the generator keeps the
+ * character on-model (invariants repeated and checked), honours the grid it can actually
+ * draw, and keeps one scale across frames. Poses and move notes come from Claude's draft.
+ */
 export function designMovePrompt(style: StyleBible, d: CharacterDesign, m: MoveDraft): string {
   const preset = PLATFORMER_MOVES.find(p => p.id === m.id);
   const poses = m.poses.length === m.frames ? m.poses : preset && preset.frames === m.frames ? preset.poses : m.poses;
+  const { rows, cols } = layoutFor(m.frames);
+  const inv = d.invariants.map(s => s.trim().replace(/[.;]+$/, '')).filter(Boolean);
+  const where = (i: number) => (rows > 1 ? ` (row ${Math.floor(i / cols) + 1}, column ${(i % cols) + 1})` : '');
   return [
-    `Using the attached reference image, create a pixel-art sprite sheet of the SAME character (${d.name}) performing: ${m.name}.`,
-    `Keep the design identical to the reference: same proportions, same colors, same clothes and details, same size. The character: ${describe(d)}`,
+    `Using the attached reference image of ${d.name}, create a pixel-art sprite sheet of the SAME character performing: ${m.name}.`,
+    '',
+    'CHARACTER: must match the reference image exactly (same design, proportions, colors, clothes, details):',
+    describe(d),
+    ...invariantLines(d, true),
+    '',
+    'THE MOVE',
     ...(m.description.trim() ? [`How ${d.name} performs it: ${m.description.trim()}`] : []),
+    ...(m.notes.trim() ? [`Direction: ${m.notes.trim()}`] : []),
     `Motion weight: ${m.weight === 'heavy' ? 'heavy and powerful (big anticipation, strong impact, slower recovery)' : m.weight === 'light' ? 'light and quick (small anticipation, snappy)' : 'normal'}.`,
-    `Layout: exactly ${m.frames} frames in ONE horizontal row, left to right, evenly spaced with a clear gap between frames (poses must not touch or overlap).`,
-    'Every frame: the whole character visible, the same scale, feet on the same ground line (for airborne poses keep the same scale).',
-    ...(poses.length ? ['Frames, in order:', ...poses.map((p, i) => `${i + 1}. ${p}`)] : []),
-    ...(m.loop ? ['The last frame must flow smoothly back into the first (looping animation).'] : []),
+    ...(m.loop ? ['It loops: the last frame must flow smoothly back into the first.'] : []),
+    'The character stays in place (no travel across the sheet), facing right in every frame.',
+    '',
+    'LAYOUT',
+    rows > 1
+      ? `A grid of ${rows} rows x ${cols} columns = exactly ${m.frames} frames. Read order: left to right, top row first.`
+      : `Exactly ${m.frames} frames in one horizontal row, left to right.`,
+    'Every cell is the same size with one pose centered in it and clear empty space between cells; poses never touch or cross into another cell.',
+    'SAME SCALE IN EVERY FRAME: the character is drawn at exactly the same size in every cell (same head size, same standing height, same pixel size). Do not zoom in or out between frames. Feet rest on the same ground line in every cell of a row.',
+    '',
+    'FRAMES',
+    ...poses.map((p, i) => `${i + 1}${where(i)}: ${p}`),
+    '',
     ...colorLines(d),
     ...formLines(style, d),
-    ...LAYOUT,
+    ...BACKDROP,
+    '',
+    `BEFORE FINISHING, check: there are exactly ${m.frames} frames${rows > 1 ? ` in a ${rows}x${cols} grid` : ''}; every frame is the same scale${inv.length ? `; every frame shows: ${inv.join('; ')}` : ''}; colors match the reference. Fix any frame that fails.`,
   ].join('\n');
 }
 
@@ -124,5 +169,6 @@ export function newMove(presetId: string | null, name?: string): MoveDraft {
     loop: p?.loop ?? false,
     weight: 'normal',
     poses: p ? [...p.poses] : [],
+    notes: '',
   };
 }

@@ -1,5 +1,5 @@
 import { countColors, type PixelImage } from '@sprite/core';
-import { contentBounds } from './image.ts';
+import { bodyHeight, contentBounds } from './image.ts';
 import { signature } from './loop.ts';
 import type { PixelizeResult } from './pipeline.ts';
 
@@ -51,17 +51,17 @@ export function assessResult(r: PixelizeResult, maxColors: number): QualityRepor
   const empty = bounds.flatMap((b, i) => (b ? [] : [i]));
   if (empty.length) issues.push({ severity: 'error', message: `Empty frame${empty.length > 1 ? 's' : ''} ${list(empty)}`, frames: empty });
 
-  const hs = bounds.map(b => b?.h ?? 0), mh = median(hs.filter(h => h > 0));
+  const hs = r.frames.map((f, i) => (bounds[i] ? bodyHeight(f) : 0)), mh = median(hs.filter(h => h > 0));
   if (mh > 0 && mh < 12) issues.push({ severity: 'warn', message: `Only ${mh}px tall: too small to read in-game; raise the height` });
   if (n > 2) {
-    const off = hs.flatMap((h, i) => (h > 0 && Math.abs(h / mh - 1) > 0.12 ? [i] : []));
+    const off = hs.flatMap((h, i) => (h > 0 && Math.abs(h / mh - 1) > 0.08 && Math.abs(h / mh - 1) <= 0.3 ? [i] : []));
     // In grid mode each frame's own pixel grid already cancels scale drift, so a height
     // difference is the pose itself (raised arm, crouch): worth a note, not a warning.
     if (off.length) issues.push({
       severity: r.mode === 'grid' ? 'info' : 'warn',
       message: r.mode === 'grid'
-        ? `Frame${off.length > 1 ? 's' : ''} ${list(off)} ${off.length > 1 ? 'are' : 'is'} taller or shorter than the rest (${off.map(i => `${hs[i]}px`).join(', ')} vs ${mh}px); fine if the pose calls for it`
-        : `Frame${off.length > 1 ? 's' : ''} ${list(off)} ${off.length > 1 ? 'are' : 'is'} a different size than the rest (${off.map(i => `${hs[i]}px`).join(', ')} vs ${mh}px); turn on "Even out frame sizes" or delete ${off.length > 1 ? 'them' : 'it'}`,
+        ? `Frame${off.length > 1 ? 's' : ''} ${list(off)}: body is ${off.map(i => `${hs[i]}px`).join(', ')} tall vs ${mh}px in the rest; fine for a crouch or stretch, otherwise the generator changed the size`
+        : `Frame${off.length > 1 ? 's' : ''} ${list(off)}: body is ${off.map(i => `${hs[i]}px`).join(', ')} tall vs ${mh}px in the rest; turn on "Even out frame sizes" or delete ${off.length > 1 ? 'them' : 'it'}`,
       frames: off,
     });
   }

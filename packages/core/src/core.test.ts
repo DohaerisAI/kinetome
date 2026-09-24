@@ -178,6 +178,7 @@ test('design palette names every part in three shades plus outline', async () =>
     id: 'kai', name: 'Kai', lore: 'exiled blade dancer', personality: 'calm', build: 'lean', outfit: 'long coat', details: 'scar over left eye',
     parts: [{ name: 'Main cloth', color: '#3d5aa8' }, { name: 'Skin', color: '#e8b796' }], outline: '#1a1420', pixelHeight: 40,
     description: 'a lean blade dancer in a long blue coat', referencePose: 'idle', assetId: null, moves: [], code: null, createdAt: '', updatedAt: '',
+    invariants: ['Left leg is a wooden peg from the knee down'],
   };
   const c = designColors(design);
   assert.deepEqual(Object.keys(c).sort(), ['main-cloth', 'main-cloth.light', 'main-cloth.shadow', 'outline', 'skin', 'skin.light', 'skin.shadow']);
@@ -185,8 +186,14 @@ test('design palette names every part in three shades plus outline', async () =>
   const p = designMovePrompt(DEFAULT_STYLE, design, m);
   assert.match(p, /How Kai performs it: spins once then cuts upward/);
   assert.match(p, /- Main cloth: base #3d5aa8/);
-  assert.match(p, /\n6\. f/);
+  assert.match(p, /\n6 \(row 2, column 3\): f/, 'six frames become a 2x3 grid with positions');
+  assert.match(p, /A grid of 2 rows x 3 columns = exactly 6 frames/);
+  assert.match(p, /NEVER CHANGES[^]*- Left leg is a wooden peg/);
+  assert.match(p, /every frame shows: Left leg is a wooden peg/);
+  assert.match(p, /SAME SCALE IN EVERY FRAME/);
   assert.match(p, /about 40 pixels tall/);
+  const { layoutFor } = await import('./index.ts');
+  assert.deepEqual([4, 6, 8, 10, 12].map(n => layoutFor(n)), [{ rows: 1, cols: 4 }, { rows: 2, cols: 3 }, { rows: 2, cols: 4 }, { rows: 3, cols: 4 }, { rows: 3, cols: 4 }]);
 });
 
 test('sprite program renders frames with palette names only', async () => {
