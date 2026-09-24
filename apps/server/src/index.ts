@@ -69,4 +69,4 @@ app.route('/', characters);
 
 const port = Number(process.env.PORT ?? 4317);
 await store.seedIfEmpty();
-serve({ fetch: app.fetch, port }, () => console.log(`sprite server on http://localhost:${port}  (workspace: ${store.WORKSPACE})`));
+serve({ fetch: app.fetch, port }, () => console.log(`kinetome server on http://localhost:${port}  (workspace: ${store.WORKSPACE})`));
