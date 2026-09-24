@@ -9,16 +9,22 @@ npm test           # core tests
 npm run typecheck
 ```
 
-## The AI workflow (no drawing skills needed)
+## Characters: the AI workflow (no drawing skills needed)
 
-1. **Prompt Kit** tab: describe the character once. Copy the **Reference** prompt into your image generator (ChatGPT, Gemini, Midjourney, …) and regenerate until you love the design.
-2. Drop the chosen image on the studio: it becomes the character (pick an idle motion for it).
-3. Back in the Prompt Kit, select the character. For each move (walk, run, jump, attack, hurt, death, …) copy its prompt, attach the reference image in the generator, then click **Import…** on that card and pick the result.
-4. The importer splits the sheet into poses, cleans it, and **adds it to the character** with the same palette, size and feet position. Same-named animations are replaced, so regenerating a bad walk just swaps it.
+**Characters** tab, per character:
 
-Prompts ask for one row of poses on flat green with no text, which is what the importer handles best. It also copes with what generators do anyway: fake checkerboard "transparency", white backdrops, text labels, uneven spacing, poses drawn at different sizes, JPEG noise. Every import shows a quality score and flags suspicious frames in the frame strip; reorder, delete, or split frames into named animations before saving.
+1. **Design:** lore, personality, build, outfit, signature details, and a color per part (hue-ring picker). Each color becomes a 3-shade hue-shifted pixel ramp; those exact hex values go into prompts and lock imports. **Write with Claude** turns the notes into a short visual brief (~1.5k tokens).
+2. **Reference:** copy the prompt → paste into [Gemini](https://gemini.google.com/app) → download → **Import result**. It becomes the character in the library.
+3. **Moves:** add a move (attack, walk, …), describe how *this* character does it, **Draft with Claude** (frame-by-frame key poses, ~2k tokens), edit or **Revise**, copy the prompt → Gemini with the reference attached → **Import result**. It merges into the character with the same palette, size and feet position.
+4. **Draw with code** (alternative): Claude writes a palette-locked sprite program, the server renders it, Claude reviews the render and fixes it. Measured: ~45k output tokens / ~8 min for 2 animations (10 frames) with one review round. Best for simpler characters, enemies and effects; detailed heroes look better via Gemini.
 
-Try it with `samples/ai-sheets/` (add them to the Wizard).
+Claude runs through the Claude Code CLI in headless mode on your subscription (no API key). Every call is locked down: replaced system prompt, no tools (Read only when reviewing a render), no MCP, no settings, structured output. Usage is logged per project (`workspace/<project>/claude-usage.jsonl`) and shown in the top bar.
+
+The importer copes with what generators do anyway: fake checkerboard "transparency", white backdrops, text labels and watermarks, uneven spacing, poses drawn at different sizes, JPEG noise. Every import shows a quality score and flags suspicious frames.
+
+## Player shortcuts
+
+Space play/pause · ←/→ step · Home first frame · [ / ] previous/next animation · + / − / 0 zoom · O onion skin · G grid · P pivot · ? help. Speed ¼×–2×, loop / ping-pong / once, scrubber, custom background.
 
 ## Pixelize: images, GIFs, video → animated pixel sprites
 

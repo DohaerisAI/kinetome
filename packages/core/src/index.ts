@@ -6,3 +6,5 @@ export * from './lint.ts';
 export * from './godot.ts';
 export * from './zip.ts';
 export * from './prompts.ts';
+export * from './design.ts';
+export * from './program.ts';

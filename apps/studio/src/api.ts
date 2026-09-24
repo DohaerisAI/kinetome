@@ -1,4 +1,16 @@
-import type { GodotSettings, Project, SpriteAsset, StyleBible } from '@sprite/core';
+import type { CharacterDesign, GodotSettings, Project, Rect, SpriteAsset, StyleBible } from '@sprite/core';
+
+export type Model = 'sonnet' | 'opus' | 'haiku';
+export interface Usage { input: number; cacheRead: number; cacheWrite: number; output: number; costUsd: number; ms: number }
+export interface Packed { sheet: string; frameWidth: number; frameHeight: number; rects: Rect[]; pivot: { x: number; y: number }; animations: { name: string; fps: number; loop: boolean; frames: number[] }[] }
+
+export type CodeEvent =
+  | { type: 'status'; step: 'writing' | 'reviewing' | 'rendering'; iteration: number; total: number; message: string }
+  | { type: 'iteration'; iteration: number; total: number; notes: string; code: string; usage: Usage; preview?: string; packed?: Packed; error?: string }
+  | { type: 'done'; ok: boolean; code: string | null; usage: Usage; packed: Packed | null }
+  | { type: 'fail'; message: string; usage: Usage };
+
+const json = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 export type AssetDraft = Omit<SpriteAsset, 'version' | 'id' | 'image' | 'createdAt' | 'updatedAt'>;
 
@@ -39,5 +51,39 @@ export const api = {
   godotZipUrl: (p: string, assetId?: string) => `/api/projects/${p}/export/godot.zip${assetId ? `?asset=${assetId}` : ''}`,
   syncGodot: (p: string, assetId?: string) =>
     call<{ written: string[]; root: string }>(`/projects/${p}/export/godot/sync${assetId ? `?asset=${assetId}` : ''}`, { method: 'POST' }),
+  claudeStatus: () => call<{ available: boolean; version: string | null; error?: string }>('/claude/status'),
+  usage: (p: string) => call<{ total: Usage & { calls: number } }>(`/projects/${p}/claude/usage`),
+  listCharacters: (p: string) => call<CharacterDesign[]>(`/projects/${p}/characters`),
+  createCharacter: (p: string, name: string) => call<CharacterDesign>(`/projects/${p}/characters`, json({ name })),
+  saveCharacter: (p: string, d: CharacterDesign) => call<CharacterDesign>(`/projects/${p}/characters/${d.id}`, { ...json(d), method: 'PUT' }),
+  deleteCharacter: (p: string, id: string) => call<void>(`/projects/${p}/characters/${id}`, { method: 'DELETE' }),
+  describe: (p: string, id: string, model: Model) => call<{ design: CharacterDesign; usage: Usage }>(`/projects/${p}/characters/${id}/describe`, json({ model })),
+  draftMove: (p: string, id: string, move: string, model: Model, instruction?: string) =>
+    call<{ design: CharacterDesign; tip: string; usage: Usage }>(`/projects/${p}/characters/${id}/moves/${move}/draft`, json({ model, instruction })),
+  renderCode: (p: string, id: string, code: string) =>
+    call<{ ok: true; packed: Packed; preview: string } | { ok: false; error: string }>(`/projects/${p}/characters/${id}/code/render`, json({ code })),
+  /** Streams the write -> render -> review loop. Resolves when the stream ends. */
+  async runCode(p: string, id: string, body: { model: Model; animations: string[]; rounds: number; feedback?: string; fromCurrent?: boolean }, onEvent: (e: CodeEvent) => void, signal?: AbortSignal) {
+    const res = await fetch(`/api/projects/${p}/characters/${id}/code/run`, { ...json(body), signal });
+    if (!res.ok || !res.body) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error ?? `${res.status} ${res.statusText}`);
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let cut;
+      while ((cut = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, cut); buf = buf.slice(cut + 2);
+        const ev = /^event: (.+)$/m.exec(block)?.[1];
+        const data = block.split('\n').filter(l => l.startsWith('data: ')).map(l => l.slice(6)).join('\n');
+        if (ev && data) onEvent({ type: ev, ...JSON.parse(data) } as CodeEvent);
+      }
+    }
+  },
   sheetUrl: (p: string, a: SpriteAsset) => `/api/projects/${p}/assets/${a.id}/sheet.png?v=${encodeURIComponent(a.updatedAt)}`,
 };

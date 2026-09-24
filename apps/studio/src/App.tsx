@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Project, SpriteAsset, StyleBible } from '@sprite/core';
-import { api, type AssetDraft } from './api.ts';
+import { designPalette, type CharacterDesign, type Project, type SpriteAsset, type StyleBible } from '@sprite/core';
+import { api, type AssetDraft, type Model, type Usage } from './api.ts';
+import { CharactersView } from './components/characters/CharactersView.tsx';
+import type { ImportRequest } from './components/characters/shared.tsx';
+import { fmtTokens } from './components/characters/shared.tsx';
+import { Icon, type IconName } from './icons.tsx';
 import { AssetList } from './components/AssetList.tsx';
 import { Viewer } from './components/Viewer.tsx';
 import { Inspector } from './components/Inspector.tsx';
@@ -8,12 +12,18 @@ import { ImportDialog } from './components/ImportDialog.tsx';
 import { PixelizeDialog } from './components/PixelizeDialog.tsx';
 import { isVideo } from './decode.ts';
 import { LineupView } from './components/LineupView.tsx';
-import { PromptKitView } from './components/PromptKitView.tsx';
 import { StyleView } from './components/StyleView.tsx';
 import { useImage } from './pixels.ts';
 
-type Tab = 'library' | 'lineup' | 'prompts' | 'style';
-const TAB_LABEL: Record<Tab, string> = { library: 'Library', lineup: 'Lineup', prompts: 'Prompt Kit', style: 'Style Bible' };
+type Tab = 'library' | 'characters' | 'lineup' | 'style';
+const TABS: { id: Tab; label: string; icon: IconName }[] = [
+  { id: 'library', label: 'Library', icon: 'layers' },
+  { id: 'characters', label: 'Characters', icon: 'users' },
+  { id: 'lineup', label: 'Lineup', icon: 'grid' },
+  { id: 'style', label: 'Style Bible', icon: 'palette' },
+];
+const MODEL_KEY = 'sprite.model';
+const readModel = (): Model => { try { const m = localStorage.getItem(MODEL_KEY); return m === 'opus' || m === 'haiku' ? m : 'sonnet'; } catch { return 'sonnet'; } };
 const LAST_PROJECT = 'sprite.lastProject';
 
 function readLast(): string | null {
@@ -61,13 +71,30 @@ export function App() {
   const [tab, setTab] = useState<Tab>('library');
   const [importFiles, setImportFiles] = useState<File[] | null>(null);
   const [pixelizeFiles, setPixelizeFiles] = useState<File[] | null>(null);
-  const [pixelizeTarget, setPixelizeTarget] = useState<{ asset: string | null; anim: string | null }>({ asset: null, anim: null });
+  const [pixelizeTarget, setPixelizeTarget] = useState<{ asset: string | null; anim: string | null; design: CharacterDesign | null }>({ asset: null, anim: null, design: null });
+  const pendingImport = useRef<ImportRequest | null>(null);
+  const [model, setModel] = useState<Model>(readModel);
+  const [claude, setClaude] = useState<{ available: boolean; version: string | null; error?: string } | null>(null);
+  const [sessionUsage, setSessionUsage] = useState({ tokens: 0, calls: 0 });
+  const [designs, setDesigns] = useState<CharacterDesign[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const pixelInput = useRef<HTMLInputElement>(null);
 
   const fail = useCallback((e: unknown) => setError(e instanceof Error ? e.message : String(e)), []);
+  const notify = useCallback((msg: string) => setNotice(msg), []);
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 4500);
+    return () => clearTimeout(t);
+  }, [notice]);
+
+  useEffect(() => { api.claudeStatus().then(setClaude, () => setClaude({ available: false, version: null })); }, []);
+  useEffect(() => { try { localStorage.setItem(MODEL_KEY, model); } catch { /* storage unavailable */ } }, [model]);
+
+  const onUsage = useCallback((u: Usage) => setSessionUsage(s => ({ tokens: s.tokens + u.input + u.cacheRead + u.cacheWrite + u.output, calls: s.calls + 1 })), []);
 
   useEffect(() => {
     api.listProjects().then(ps => {
@@ -88,6 +115,15 @@ export function App() {
       setSelectedId(list[0]?.id ?? null);
     }, fail);
   }, [pid, fail]);
+
+  // character designs own their palettes: the style check accepts them for the linked sprite
+  useEffect(() => {
+    if (pid && tab !== 'characters') api.listCharacters(pid).then(setDesigns, () => setDesigns([]));
+  }, [pid, tab, assets]);
+  const paletteFor = useCallback((assetId: string) => {
+    const d = designs.find(x => x.assetId === assetId);
+    return d ? designPalette(d) : [];
+  }, [designs]);
 
   const selected = assets.find(a => a.id === selectedId) ?? null;
   const img = useImage(pid && selected ? api.sheetUrl(pid, selected) : null);
@@ -157,12 +193,33 @@ export function App() {
   };
 
   const openPixelize = (files: File[], asset: string | null = null, anim: string | null = null) => {
-    setPixelizeTarget({ asset, anim });
+    pendingImport.current = null;
+    setPixelizeTarget({ asset, anim, design: null });
     setPixelizeFiles(files);
   };
 
+  const refreshAssets = useCallback(() => {
+    if (pid) api.listAssets(pid).then(setAssets, fail);
+  }, [pid, fail]);
+
   const importPixelized = async (draft: AssetDraft, png: Blob) => {
-    if (await importAsset(draft, png)) setPixelizeFiles(null);
+    if (!pid) return;
+    try {
+      const created = await api.createAsset(pid, draft, png);
+      setAssets(list => [...list, created]);
+      pendingImport.current?.onDone(created);
+      pendingImport.current = null;
+      setPixelizeFiles(null);
+      if (tab !== 'characters') { setSelectedId(created.id); setTab('library'); }
+      setNotice(`${created.name} added to the library`);
+    } catch (e) { fail(e); }
+  };
+
+  /** From the Characters workspace: pick a Gemini result; it opens in Pixelize aimed at that character. */
+  const importForCharacter = (req: ImportRequest) => {
+    pendingImport.current = req;
+    setPixelizeTarget({ asset: req.assetId, anim: req.anim, design: req.design });
+    pixelInput.current?.click();
   };
 
   const mergePixelized = async (a: SpriteAsset, png: Blob): Promise<boolean> => {
@@ -172,18 +229,16 @@ export function App() {
       replaceAsset(saved);
       setSelectedId(saved.id);
       setAnimName(saved.animations[saved.animations.length - 1]?.name ?? null);
+      pendingImport.current?.onDone(saved);
+      pendingImport.current = null;
       setPixelizeFiles(null);
-      setTab('library');
+      if (tab !== 'characters') setTab('library');
       setNotice(`Updated ${saved.name}: ${saved.animations.map(x => x.name).join(', ')}`);
       return true;
     } catch (e) { fail(e); return false; }
   };
 
-  /** From the Prompt Kit: pick the generated image; it goes straight to Pixelize aimed at that character. */
-  const importFor = (asset: string | null, anim: string | null = null) => {
-    setPixelizeTarget({ asset, anim });
-    pixelInput.current?.click();
-  };
+
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -204,34 +259,44 @@ export function App() {
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
         <button className="ghost" onClick={newProject}>New project</button>
-        <nav className="tabs">
-          {(Object.keys(TAB_LABEL) as Tab[]).map(t => (
-            <button key={t} className={tab === t ? 'tab active' : 'tab'} onClick={() => setTab(t)}>{TAB_LABEL[t]}</button>
+        <nav className="tabs" role="tablist">
+          {TABS.map(t => (
+            <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'tab active' : 'tab'} onClick={() => setTab(t.id)}>
+              <Icon name={t.icon} /> {t.label}
+            </button>
           ))}
         </nav>
         <div className="spacer" />
-        {pid && <a className="button" href={api.godotZipUrl(pid)} title="Every asset as SpriteFrames + scenes, laid out relative to the Godot project root">Export all → Godot</a>}
+        <div className={`claude-pill ${claude?.available ? 'on' : claude ? 'off' : ''}`} title={claude?.available ? `Claude Code ${claude.version} · uses your subscription` : claude?.error ?? 'Checking Claude…'}>
+          <span className="dot" aria-hidden />
+          <span>Claude</span>
+          <select value={model} onChange={e => setModel(e.target.value as Model)} aria-label="Claude model" disabled={!claude?.available}>
+            <option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option>
+          </select>
+          {sessionUsage.calls > 0 && <span className="pill-usage" title={`${sessionUsage.calls} Claude calls this session`}>{fmtTokens(sessionUsage.tokens)} tok</span>}
+        </div>
+        {pid && <a className="button" href={api.godotZipUrl(pid)} title="Every asset as SpriteFrames + scenes, laid out relative to the Godot project root"><Icon name="download" /> Godot</a>}
         {project?.godot.path && <button onClick={() => syncGodot()} title={project.godot.path}>Sync all to Godot</button>}
-        <button className="primary" onClick={() => fileInput.current?.click()} disabled={!pid} title="Sprite sheets, images, GIFs, videos">Import…</button>
+        <button className="primary" onClick={() => fileInput.current?.click()} disabled={!pid} title="Sprite sheets, images, GIFs, videos"><Icon name="upload" /> Import…</button>
         <input
           ref={fileInput} type="file" multiple accept=".png,.json,.jpg,.jpeg,.gif,.webp,.bmp,.avif,image/*,video/*" hidden
           onChange={e => { routeFiles([...(e.target.files ?? [])]); e.target.value = ''; }}
         />
         <input
           ref={pixelInput} type="file" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.avif,image/*,video/*" hidden
-          onChange={e => { const f = [...(e.target.files ?? [])]; if (f.length) setPixelizeFiles(f); e.target.value = ''; }}
+          onChange={e => { const f = [...(e.target.files ?? [])]; if (f.length) setPixelizeFiles(f); else pendingImport.current = null; e.target.value = ''; }}
         />
       </header>
 
-      {error && <div className="toast" onClick={() => setError(null)}>{error} <span className="dim">(click to dismiss)</span></div>}
-      {notice && !error && <div className="toast ok" onClick={() => setNotice(null)}>{notice} <span className="dim">(click to dismiss)</span></div>}
+      {error && <div className="toast" role="alert" onClick={() => setError(null)}><Icon name="alert" /> {error} <span className="dim">· click to dismiss</span></div>}
+      {notice && !error && <div className="toast ok" role="status" onClick={() => setNotice(null)}><Icon name="check" /> {notice}</div>}
 
       {pid && style && tab === 'library' && (
         <main className="library">
           <AssetList projectId={pid} assets={assets} selectedId={selectedId} onSelect={setSelectedId} />
-          <Viewer asset={selected} img={img} animName={animName} />
+          <Viewer asset={selected} img={img} animName={animName} onAnim={setAnimName} />
           <Inspector
-            asset={selected} img={img} style={style} animName={animName}
+            asset={selected} img={img} style={style} animName={animName} extraPalette={selected ? paletteFor(selected.id) : []}
             onAnim={setAnimName} onSave={saveAsset} onDelete={removeAsset}
             godotZipUrl={selected ? api.godotZipUrl(pid, selected.id) : null}
             onSyncGodot={project?.godot.path && selected ? () => syncGodot(selected.id) : null}
@@ -239,11 +304,12 @@ export function App() {
         </main>
       )}
       {pid && style && tab === 'lineup' && (
-        <LineupView projectId={pid} assets={assets} style={style}
+        <LineupView projectId={pid} assets={assets} style={style} paletteFor={paletteFor}
           onOpen={id => { setSelectedId(id); setTab('library'); }} />
       )}
-      {pid && style && tab === 'prompts' && (
-        <PromptKitView projectId={pid} style={style} assets={assets} onSaveAsset={a => saveAsset(a)} onImportFor={importFor} />
+      {pid && style && tab === 'characters' && (
+        <CharactersView projectId={pid} style={style} assets={assets} model={model} onUsage={onUsage}
+          onImport={importForCharacter} onAssetsChanged={refreshAssets} notify={notify} fail={fail} />
       )}
       {pid && style && tab === 'style' && (
         <StyleView projectId={pid} project={project} style={style} assets={assets}
@@ -257,8 +323,8 @@ export function App() {
       )}
       {pixelizeFiles && style && (
         <PixelizeDialog files={pixelizeFiles} style={style} projectId={pid!} assets={assets}
-          initialTarget={pixelizeTarget.asset} initialAnim={pixelizeTarget.anim}
-          onCancel={() => setPixelizeFiles(null)} onCreate={importPixelized} onMerge={mergePixelized} onError={fail} />
+          initialTarget={pixelizeTarget.asset} initialAnim={pixelizeTarget.anim} design={pixelizeTarget.design}
+          onCancel={() => { pendingImport.current = null; setPixelizeFiles(null); }} onCreate={importPixelized} onMerge={mergePixelized} onError={fail} />
       )}
       {dragging && <div className="dropveil">Drop sprite sheets, images, GIFs or videos</div>}
     </div>

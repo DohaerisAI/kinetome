@@ -161,3 +161,49 @@ test('Prompt Kit: prompts carry style, layout and per-frame poses', async () => 
   assert.match(p, /No text, no labels/);
   assert.ok(PLATFORMER_MOVES.every(m => m.poses.length === m.frames), 'pose list matches frame count');
 });
+
+test('rampFor: darker cool shadow, lighter warm highlight', async () => {
+  const { rampFor, hexToRgb: h2r, rgbToOklab: lab } = await import('./index.ts');
+  const r = rampFor('#3d5aa8');
+  const L = (hex: string) => lab(...h2r(hex))[0];
+  assert.ok(L(r.shadow) < L(r.base) && L(r.base) < L(r.light), JSON.stringify(r));
+  assert.equal(r.base, '#3d5aa8');
+  const grey = rampFor('#808080');
+  assert.notEqual(grey.shadow, grey.light);
+});
+
+test('design palette names every part in three shades plus outline', async () => {
+  const { designColors, designMovePrompt, newMove } = await import('./index.ts');
+  const design = {
+    id: 'kai', name: 'Kai', lore: 'exiled blade dancer', personality: 'calm', build: 'lean', outfit: 'long coat', details: 'scar over left eye',
+    parts: [{ name: 'Main cloth', color: '#3d5aa8' }, { name: 'Skin', color: '#e8b796' }], outline: '#1a1420', pixelHeight: 40,
+    description: 'a lean blade dancer in a long blue coat', referencePose: 'idle', assetId: null, moves: [], code: null, createdAt: '', updatedAt: '',
+  };
+  const c = designColors(design);
+  assert.deepEqual(Object.keys(c).sort(), ['main-cloth', 'main-cloth.light', 'main-cloth.shadow', 'outline', 'skin', 'skin.light', 'skin.shadow']);
+  const m = { ...newMove('attack'), description: 'spins once then cuts upward', poses: ['a', 'b', 'c', 'd', 'e', 'f'] };
+  const p = designMovePrompt(DEFAULT_STYLE, design, m);
+  assert.match(p, /How Kai performs it: spins once then cuts upward/);
+  assert.match(p, /- Main cloth: base #3d5aa8/);
+  assert.match(p, /\n6\. f/);
+  assert.match(p, /about 40 pixels tall/);
+});
+
+test('sprite program renders frames with palette names only', async () => {
+  const { validateProgram, renderProgram, contactSheet } = await import('./index.ts');
+  const code = `const sprite = {
+    width: 16, height: 16, pivot: [8, 15],
+    animations: { idle: { frames: 2, fps: 4, loop: true } },
+    draw(g, anim, frame, t) { g.rect(4, 6 + frame, 8, 10 - frame, 'body'); g.outline(); },
+  }; return sprite;`;
+  const program = validateProgram(new Function(code)());
+  const out = renderProgram(program, { body: '#ff0000', outline: '#000000' });
+  assert.equal(out.animations[0].frames.length, 2);
+  const f0 = out.animations[0].frames[0];
+  assert.deepEqual([...f0.data.slice((8 * 16 + 8) * 4, (8 * 16 + 8) * 4 + 4)], [255, 0, 0, 255]);
+  assert.deepEqual([...f0.data.slice((8 * 16 + 3) * 4, (8 * 16 + 3) * 4 + 4)], [0, 0, 0, 255], 'outline drawn');
+  assert.ok(contactSheet(out).width > 32);
+  const bad = validateProgram(new Function(code.replace("'body'", "'#ff0000'"))());
+  assert.throws(() => renderProgram(bad, { body: '#ff0000', outline: '#000000' }), /Unknown color "#ff0000"/);
+  assert.throws(() => validateProgram({ width: 4 }), /integer 8\.\.256/);
+});

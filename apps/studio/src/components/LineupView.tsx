@@ -11,8 +11,8 @@ const pickAnim = (a: SpriteAsset) => a.animations.find(x => /idle/i.test(x.name)
  * Every sprite side by side at the same scale on a shared baseline, the way an art
  * director checks a cast. Odd-one-out problems (wrong size, off palette) are obvious here.
  */
-export function LineupView({ projectId, assets, style, onOpen }: {
-  projectId: string; assets: SpriteAsset[]; style: StyleBible; onOpen: (id: string) => void;
+export function LineupView({ projectId, assets, style, paletteFor, onOpen }: {
+  projectId: string; assets: SpriteAsset[]; style: StyleBible; paletteFor: (assetId: string) => string[]; onOpen: (id: string) => void;
 }) {
   const [loaded, setLoaded] = useState<Loaded[]>([]);
   const [onlyChars, setOnlyChars] = useState(false);
@@ -24,10 +24,12 @@ export function LineupView({ projectId, assets, style, onOpen }: {
     let live = true;
     Promise.all(assets.map(async asset => {
       const img = await loadImage(api.sheetUrl(projectId, asset));
-      return { asset, img, report: lintAsset(toPixels(img), asset, style) };
+      const extra = paletteFor(asset.id);
+      const eff = extra.length ? { ...style, palette: [...new Set([...style.palette, ...extra])] } : style;
+      return { asset, img, report: lintAsset(toPixels(img), asset, eff) };
     })).then(l => live && setLoaded(l), () => {});
     return () => { live = false; };
-  }, [projectId, assets, style]);
+  }, [projectId, assets, style, paletteFor]);
 
   const shown = useMemo(() => loaded.filter(l => !onlyChars || l.asset.kind === 'character'), [loaded, onlyChars]);
 

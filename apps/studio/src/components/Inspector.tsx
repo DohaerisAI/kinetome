@@ -12,13 +12,16 @@ interface Props {
   onAnim: (name: string) => void;
   onSave: (a: SpriteAsset, png?: Blob) => Promise<void>;
   onDelete: (id: string) => void;
+  /** Colors that are on-style for this sprite beyond the Style Bible (its character design's ramps). */
+  extraPalette: string[];
   godotZipUrl: string | null;
   onSyncGodot: (() => void) | null;
 }
 
-export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelete, godotZipUrl, onSyncGodot }: Props) {
+export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelete, extraPalette, godotZipUrl, onSyncGodot }: Props) {
   const pixels = usePixels(img);
-  const report = useMemo(() => (asset && pixels ? lintAsset(pixels, asset, style) : null), [asset, pixels, style]);
+  const effStyle = useMemo(() => (extraPalette.length ? { ...style, palette: [...new Set([...style.palette, ...extraPalette])] } : style), [style, extraPalette]);
+  const report = useMemo(() => (asset && pixels ? lintAsset(pixels, asset, effStyle) : null), [asset, pixels, effStyle]);
   const [newAnim, setNewAnim] = useState({ name: '', from: 0, to: 0 });
   const [busy, setBusy] = useState(false);
 
@@ -46,7 +49,7 @@ export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelet
       // Harden before snapping: the browser stores semi-transparent pixels premultiplied,
       // so their RGB drifts off-palette again if alpha is fixed afterwards.
       const hard = hardenAlpha(pixels);
-      const out = fix === 'snap-palette' ? snapToPalette(hard, style.palette) : hard;
+      const out = fix === 'snap-palette' ? snapToPalette(hard, effStyle.palette) : hard;
       await onSave(asset, await canvasToPng(pixelsToCanvas(out)));
     } finally { setBusy(false); }
   };

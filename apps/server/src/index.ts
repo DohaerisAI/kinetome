@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { ZodError } from 'zod';
 import * as store from './store.ts';
+import { characters } from './characters.ts';
 
 const app = new Hono().basePath('/api');
 
@@ -63,6 +64,8 @@ app.get('/projects/:p/assets/:a/sheet.png', async c => {
   if (!buf) throw new store.HttpError(404, 'not found');
   return c.body(buf, 200, { 'content-type': 'image/png', 'cache-control': 'no-cache' });
 });
+
+app.route('/', characters);
 
 const port = Number(process.env.PORT ?? 4317);
 await store.seedIfEmpty();

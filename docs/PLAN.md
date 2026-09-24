@@ -258,6 +258,10 @@ Tilesets with autotile rules and seam lint, props, VFX generator, UI kits, pixel
 
 ---
 
+## 6b. Status (2026-09-24)
+
+Built: Characters workspace (design + part color ramps, Claude brief, moves with Claude-drafted poses, Gemini prompts, character-linked imports), draw-with-code route (sandboxed record/replay renderer, streamed write→render→review loop), polished player. Measured Claude costs: brief ~1.5k tokens, move draft ~2.3k, code route ~45k output tokens / 8 min per 10 frames + 1 review round.
+
 ## 7. Next steps (concrete, in order)
 
 1. **MCP server + sprite program sandbox** (`apps/mcp`, the sandbox runtime). This unlocks generation on the subscription right away: Claude Code can draw, render, check and save sprites into the studio.

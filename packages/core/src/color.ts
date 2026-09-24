@@ -130,3 +130,50 @@ export function downscale(img: PixelImage, k: number): PixelImage {
   }
   return { width: w, height: h, data };
 }
+
+function linearToSrgb(c: number): number {
+  const v = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+  return Math.max(0, Math.min(255, Math.round(v * 255)));
+}
+
+export function oklabToRgb(L: number, a: number, b: number): [number, number, number] {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    linearToSrgb(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
+    linearToSrgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
+    linearToSrgb(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s),
+  ];
+}
+
+/** Moves hue angle `h` toward `target` by up to `deg` degrees along the shorter arc. */
+function shiftHue(h: number, target: number, deg: number): number {
+  let d = ((target - h + 540) % 360) - 180;
+  d = Math.max(-deg, Math.min(deg, d));
+  return (h + d + 360) % 360;
+}
+
+export interface Ramp { shadow: string; base: string; light: string }
+
+/**
+ * A 3-shade pixel-art ramp from one color, the way pixel artists build them: shadows get
+ * darker AND shift toward cool blue-violet, highlights get lighter and shift toward warm
+ * yellow, instead of just mixing in black/white (which looks muddy).
+ */
+export function rampFor(hex: string): Ramp {
+  const [r, g, b] = hexToRgb(hex);
+  const [L, A, B] = rgbToOklab(r, g, b);
+  const C = Math.hypot(A, B);
+  const h = (Math.atan2(B, A) * 180) / Math.PI;
+  const shift = Math.min(1, C / 0.08) * 14; // greys barely shift
+  const make = (l: number, c: number, hue: number) => {
+    const rad = (hue * Math.PI) / 180;
+    return rgbToHex(...oklabToRgb(Math.max(0.05, Math.min(0.98, l)), Math.cos(rad) * c, Math.sin(rad) * c));
+  };
+  return {
+    shadow: make(L - Math.max(0.1, L * 0.2), C * 1.05, shiftHue(h, 280, shift)),
+    base: hex.toLowerCase(),
+    light: make(L + Math.max(0.08, (1 - L) * 0.35), C * 0.85, shiftHue(h, 95, shift)),
+  };
+}

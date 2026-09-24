@@ -1,7 +1,8 @@
 import { mkdir, readdir, readFile, rm, writeFile, copyFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
-  DEFAULT_STYLE, GodotSettings, Project, SpriteAsset, StyleBible, godotFiles, parseSheet, isUniform, slugify, zip,
+  CharacterDesign, DEFAULT_STYLE, GodotSettings, PART_PRESETS, Project, SpriteAsset, StyleBible,
+  godotFiles, isUniform, newMove, parseSheet, slugify, zip,
 } from '@sprite/core';
 
 /**
@@ -187,4 +188,55 @@ export async function syncGodot(p: string, assetId?: string): Promise<{ written:
     await writeFile(dest, toBytes(f));
   }
   return { written: files.map(f => `res://${f.path}`), root };
+}
+
+// ---------- character designs ----------
+
+const charDir = (p: string) => join(projectDir(p), 'characters');
+const charPath = (p: string, c: string) => join(charDir(p), `${safeId(c)}.json`);
+
+export function projectPath(p: string): string { return projectDir(p); }
+
+export async function listCharacters(p: string): Promise<CharacterDesign[]> {
+  await getProject(p);
+  await mkdir(charDir(p), { recursive: true });
+  const out: CharacterDesign[] = [];
+  for (const f of await readdir(charDir(p))) {
+    if (!f.endsWith('.json')) continue;
+    try { out.push(CharacterDesign.parse(await readJson(join(charDir(p), f)))); } catch { /* skip broken */ }
+  }
+  return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export async function getCharacter(p: string, c: string): Promise<CharacterDesign> {
+  return CharacterDesign.parse(await readJson(charPath(p, c)));
+}
+
+export async function createCharacter(p: string, name: string): Promise<CharacterDesign> {
+  const { style } = await getProject(p);
+  await mkdir(charDir(p), { recursive: true });
+  let id = slugify(name), n = 2;
+  while (await exists(charPath(p, id))) id = `${slugify(name)}-${n++}`;
+  const now = new Date().toISOString();
+  const design = CharacterDesign.parse({
+    id, name, pixelHeight: style.unitHeight,
+    parts: PART_PRESETS.filter(x => ['Skin', 'Hair', 'Main cloth', 'Accent'].includes(x.name)),
+    outline: style.outline.mode === 'none' ? null : (style.outline.color ?? '#1a1420'),
+    moves: [newMove('idle')],
+    createdAt: now, updatedAt: now,
+  });
+  await writeJson(charPath(p, id), design);
+  return design;
+}
+
+export async function saveCharacter(p: string, c: string, body: unknown): Promise<CharacterDesign> {
+  const prev = await getCharacter(p, c);
+  const next = CharacterDesign.parse({ ...(body as object), id: prev.id, createdAt: prev.createdAt, updatedAt: new Date().toISOString() });
+  await writeJson(charPath(p, c), next);
+  return next;
+}
+
+export async function deleteCharacter(p: string, c: string): Promise<void> {
+  await getCharacter(p, c);
+  await rm(charPath(p, c));
 }

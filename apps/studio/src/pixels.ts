@@ -81,3 +81,18 @@ export function drawChecker(ctx: CanvasRenderingContext2D, w: number, h: number,
   for (let y = 0; y < h; y += size)
     for (let x = (y / size) % 2 ? size : 0; x < w; x += size * 2) ctx.fillRect(x, y, size, size);
 }
+
+/** Slices a packed sheet (data URL + rects) back into frames. */
+export async function unpackFrames(sheetUrl: string, rects: Rect[]): Promise<PixelImage[]> {
+  const img = await loadImage(sheetUrl);
+  const px = toPixels(img);
+  return rects.map(r => {
+    const out = { width: r.w, height: r.h, data: new Uint8ClampedArray(r.w * r.h * 4) };
+    for (let y = 0; y < r.h; y++) out.data.set(px.data.subarray(((r.y + y) * px.width + r.x) * 4, ((r.y + y) * px.width + r.x + r.w) * 4), y * r.w * 4);
+    return out;
+  });
+}
+
+export async function dataUrlToBlob(url: string): Promise<Blob> {
+  return (await fetch(url)).blob();
+}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AssetKind, countColors, lintAsset, packGrid, PLATFORMER_MOVES,
-  type PixelImage, type SpriteAsset, type StyleBible,
+  AssetKind, countColors, designPalette, lintAsset, packGrid, PLATFORMER_MOVES,
+  type CharacterDesign, type PixelImage, type SpriteAsset, type StyleBible,
 } from '@sprite/core';
 import {
   contentBounds, DEFAULT_PIXELIZE, generateMotion, MOTION_PRESETS, pickEvenly,
@@ -30,6 +30,8 @@ interface Props {
   initialTarget?: string | null;
   /** Name for a single-row sheet (e.g. "walk" when importing from the Prompt Kit's Walk card). */
   initialAnim?: string | null;
+  /** Importing for a character design: lock to its palette, height and name. */
+  design?: CharacterDesign | null;
   onCancel: () => void;
   onCreate: (draft: AssetDraft, png: Blob) => Promise<unknown>;
   onMerge: (asset: SpriteAsset, png: Blob) => Promise<boolean>;
@@ -54,7 +56,7 @@ const presetFor = (name: string) => PLATFORMER_MOVES.find(m => m.id === name.toL
  * Any image, AI sprite sheet, GIF, video or frame sequence -> clean on-style animations,
  * as a new asset or added to an existing character.
  */
-export function PixelizeDialog({ files, style, projectId, assets, initialTarget, initialAnim, onCancel, onCreate, onMerge, onError }: Props) {
+export function PixelizeDialog({ files, style, projectId, assets, initialTarget, initialAnim, design, onCancel, onCreate, onMerge, onError }: Props) {
   const [src, setSrc] = useState<Decoded | null>(null);
   const [loading, setLoading] = useState(true);
   const [split, setSplit] = useState(true);
@@ -125,7 +127,8 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
       setSrc(d);
       setRange([0, d.frames.length]);
       setName(d.name.replace(/[_-]+/g, ' ').trim() || 'sprite');
-      try {
+      if (design) { setName(design.name); setDescription(design.description); }
+      else try {
         const brief = JSON.parse(localStorage.getItem(BRIEF_KEY(projectId)) ?? 'null');
         if (brief?.description) setDescription(brief.description);
         if (brief?.name) setName(brief.name);
@@ -166,7 +169,8 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
     let live = true;
     if (targetId === 'new') {
       setTarget(null);
-      setOpts(o => (o.palette === 'fixed' ? { ...o, palette: 'auto-bible', targetHeight: style.unitHeight } : o));
+      if (design) setOpts(o => ({ ...o, palette: 'fixed', fixedPalette: designPalette(design), targetHeight: design.pixelHeight, outline: design.outline }));
+      else setOpts(o => (o.palette === 'fixed' ? { ...o, palette: 'auto-bible', targetHeight: style.unitHeight } : o));
       return;
     }
     const asset = assets.find(a => a.id === targetId);
@@ -174,14 +178,15 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
     loadImage(api.sheetUrl(projectId, asset)).then(img => {
       if (!live) return;
       const px = toPixels(img);
-      const palette = [...countColors(px).keys()];
+      // a character design's intended colors beat whatever an earlier import left in the sheet
+      const palette = design ? designPalette(design) : [...countColors(px).keys()];
       const height = lintAsset(px, asset, style).stats.contentHeight || style.unitHeight;
       setTarget({ asset, img, palette, height });
       setKind(asset.kind);
       setOpts(o => ({ ...o, palette: 'fixed', fixedPalette: palette, targetHeight: height }));
     }, onError);
     return () => { live = false; };
-  }, [targetId, assets, projectId, style, onError]);
+  }, [targetId, assets, projectId, style, onError, design]);
 
   const variants = useMemo(() => variantsFor(opts, axis), [opts, axis]);
 
@@ -368,7 +373,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
                 </select>
               </label>
               {target ? (
-                <p className="dim small">Uses {target.asset.name}'s {target.palette.length} colors and {target.height}px height; feet line up with its existing animations. An animation with the same name is replaced.</p>
+                <p className="dim small">Uses {design ? `${design.name}'s design` : target.asset.name + "'s"} {target.palette.length} colors and {target.height}px height; feet line up with its existing animations. An animation with the same name is replaced.</p>
               ) : (
                 <>
                   <label className="field"><span>Name</span><input value={name} onChange={e => { setName(e.target.value); saveBrief({ name: e.target.value }); }} /></label>
@@ -422,7 +427,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
                   <h3>Frames <span className="dim">◀ ▶ reorder · ✕ delete · ⤓ new animation from here</span></h3>
                   <div className="strip">
                     {segments.map((g, k) => (
-                      <div key={k} className={k === si ? 'seg active' : 'seg'} onClick={() => setSelSeg(k)}>
+                      <div key={k} className={k === si ? 'strip-seg active' : 'strip-seg'} onClick={() => setSelSeg(k)}>
                         <div className="seg-head">
                           <input list="move-names" value={g.name} onChange={e => patchSeg(k, { name: e.target.value })} aria-label="Animation name" placeholder="animation name" />
                           <input type="number" className="num" min={1} max={60} value={g.fps} title="fps" onChange={e => patchSeg(k, { fps: Math.max(1, Math.min(60, +e.target.value || 1)) })} />
@@ -506,7 +511,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
                     <option value="auto-bible">Auto → Style Bible</option>
                     <option value="bible">Style Bible (direct)</option>
                     <option value="auto">Auto (free)</option>
-                    {target && <option value="fixed">{target.asset.name}'s colors</option>}
+                    {(target || design) && <option value="fixed">{design?.name ?? target?.asset.name}'s colors</option>}
                     <option value="none">Keep colors</option>
                   </select>
                 </label>

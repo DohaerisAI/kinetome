@@ -90,3 +90,50 @@ export const DEFAULT_STYLE: StyleBible = {
 export function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'untitled';
 }
+
+// ---------- character design ----------
+
+export const DesignPart = z.object({
+  /** Human label, e.g. "Hair", "Main cloth". Its slug names the color in sprite programs. */
+  name: z.string().min(1).max(40),
+  color: Hex,
+});
+export type DesignPart = z.infer<typeof DesignPart>;
+
+export const MoveDraft = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+  name: z.string().min(1),
+  /** How the character performs it, in the user's words (lore, weapon, style). */
+  description: z.string().default(''),
+  frames: z.number().int().min(1).max(24),
+  fps: z.number().int().min(1).max(60),
+  loop: z.boolean(),
+  weight: z.enum(['light', 'normal', 'heavy']).default('normal'),
+  /** One pose per frame; drafted by Claude or typed by the user. */
+  poses: z.array(z.string()).default([]),
+});
+export type MoveDraft = z.infer<typeof MoveDraft>;
+
+export const CharacterDesign = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+  name: z.string().min(1),
+  lore: z.string().default(''),
+  personality: z.string().default(''),
+  build: z.string().default(''),
+  outfit: z.string().default(''),
+  details: z.string().default(''),
+  parts: z.array(DesignPart).default([]),
+  outline: Hex.nullable().default('#1a1420'),
+  pixelHeight: z.number().int().min(12).max(256),
+  /** Visual description used in every prompt (Claude-polished, user-editable). */
+  description: z.string().default(''),
+  referencePose: z.string().default('neutral standing idle pose, full body, facing right'),
+  /** Library asset this design became (reference imported or code drawn). */
+  assetId: z.string().nullable().default(null),
+  moves: z.array(MoveDraft).default([]),
+  /** Latest sprite program (code-drawn route) and the animations it renders. */
+  code: z.string().nullable().default(null),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type CharacterDesign = z.infer<typeof CharacterDesign>;
