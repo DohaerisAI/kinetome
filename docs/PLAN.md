@@ -2,7 +2,58 @@
 
 > One sentence: **a consistency compiler for game art.** You describe a world once, and every sprite in the project — generated, imported, recorded, or drawn — compiles into that world's style, animated, sliced, hitboxed, and dropped straight into your game.
 
-Status: foundation done (canonical format, importers, style linter, lineup, Style Bible). This doc is the road from here to the big vision.
+Status: foundation done (canonical format, importers, style linter, lineup, Style Bible) plus Godot export (zip + folder sync). This doc is the road from here to the big vision.
+
+---
+
+## 0. Decisions (2026-09-24)
+
+| Topic | Decision | Consequence |
+|---|---|---|
+| Engine | **Godot 4 first** (the user's game is in Godot) | Godot exporter pulled forward and already built: SpriteFrames `.tres` + a ready `AnimatedSprite2D` `.tscn` (nearest filter, feet on the origin), zip download or direct sync into the Godot project folder |
+| Perspective | **Side-view platformer first** | Platformer moveset, hitboxes and a `CharacterBody2D` template come first. Top-down, 3/4, isometric and 2.5D are recorded in [FUTURE.md](FUTURE.md) with rules that keep today's code compatible |
+| Claude access | **The user's Claude subscription**, not an API key | See §0.1. The Agent SDK is API-key only, so we drive Claude Code itself |
+| GPU | None on the dev machine; RTX 3050 laptop (4 GB) elsewhere | See §0.2. Nothing core depends on a local GPU |
+
+### 0.1 Using the subscription: Claude Code is the brain
+
+Claude Code headless mode (`claude -p`) runs on the subscription login; the Agent SDK does not. So the architecture inverts: **the studio exposes tools, and Claude Code calls them.**
+
+```
+ ┌──────────────── Claude Code (your subscription) ───────────────┐
+ │  interactive in a terminal / in your Godot repo   OR           │
+ │  headless `claude -p` spawned by the studio's Generate button  │
+ └───────────────┬────────────────────────────────────────────────┘
+                 │ MCP (stdio)
+ ┌───────────────▼────────────────────────────────────────────────┐
+ │  apps/mcp  → studio server                                     │
+ │  get_style_bible · list_assets · view_asset (PNG path to Read) │
+ │  render_sprite_program(code) → frames + lint report            │
+ │  save_asset · pixelize(image) · export_godot / sync_godot      │
+ └────────────────────────────────────────────────────────────────┘
+```
+
+- **Mode A: conversational.** You chat with Claude Code (optionally inside your Godot project). It reads the Bible, writes sprite programs, renders them, looks at the PNGs (vision via the Read tool), fixes defects, saves, and syncs to Godot.
+- **Mode B: the Generate button.** The studio server spawns `claude -p --output-format stream-json --mcp-config … --allowedTools …` and streams progress into the UI. The same tools, just with a button instead of a chat.
+- **Caveats:**
+  - The server must strip `ANTHROPIC_API_KEY` from the child environment, otherwise it overrides the subscription.
+  - Never pass `--bare`, which disables subscription auth.
+  - Headless calls count against the same 5-hour and weekly limits as interactive use, so keep prompts tight and renders small.
+- **What the subscription does not cover:** image and video generation (Claude doesn't make images). The **code-drawn** and **rig** routes need nothing but the subscription, so they become the main engine. Image and video providers (Phase 4) are optional add-ons with their own cost, decided by the provider spike.
+
+### 0.2 GPU reality check (RTX 3050 laptop, 4 GB VRAM)
+
+| Workload | On 4 GB? |
+|---|---|
+| Background removal, segmentation (small models), MediaPipe pose | ✅ Easily; most of these also run in the browser via WebGPU/WASM on any laptop |
+| Pixelize pipeline, rig renderer, code-drawn sprites | ✅ CPU only |
+| SD 1.5 + a pixel-art LoRA at 512px | ⚠️ Works, a few seconds per image |
+| SDXL | ⚠️ Only with heavy CPU offload; roughly 1–2 min per image |
+| Flux | ❌ Practically no (quantized + offload is very slow) |
+| Training a per-project LoRA | ⚠️ SD 1.5 barely; SDXL/Flux no |
+| Video models | ❌ They need 12–24 GB or more |
+
+Conclusion: design for **no GPU**. Heavy ML runs in the browser (small ONNX models) or through hosted APIs. The 3050 laptop can later act as an optional **LAN worker** running ComfyUI + SD 1.5 for cheap local drafts.
 
 ---
 
@@ -181,7 +232,9 @@ Each phase ships something usable on its own.
 - **Done when:** you can film yourself doing a kick and your character does that kick in-game.
 
 ### Phase 5: Game integration (≈2 weeks)
-- Exporters: Godot (SpriteFrames `.tres`, AnimationPlayer with hitbox tracks), Unity, Phaser, Aseprite, generic JSON.
+- ✅ Godot basics (pulled forward): SpriteFrames `.tres`, `AnimatedSprite2D` `.tscn`, zip download, direct folder sync.
+- Godot next: a platformer `CharacterBody2D` template (collision capsule sized from the idle bounding box), `AnimationPlayer` with per-frame hitbox/hurtbox `CollisionShape2D` tracks and method tracks for events (footsteps, spawn projectile), and an editor plugin for one-click re-sync.
+- Other exporters later: Unity, Phaser, Aseprite, generic JSON.
 - `sprites.yaml` manifest in the game repo + `sprite build` CLI (missing assets are generated or get placeholders).
 - **MCP server:** Claude Code in your game repo can call `generate_sprite`, `animate`, `export` directly.
 - Live link: hot reload into a running game. Playground sandbox in the studio.
@@ -205,10 +258,12 @@ Tilesets with autotile rules and seam lint, props, VFX generator, UI kits, pixel
 
 ---
 
-## 7. Next two weeks (concrete)
+## 7. Next steps (concrete, in order)
 
-1. Pixelize pipeline in `packages/pixel` (port PixelRefiner grid detection + AA removal; add batch-shared mode).
-2. Animated ingest: GIF/WebP via `ImageDecoder`, MP4 via `<video>`; loop finder + stabilizer.
-3. Material ramps in the Style Bible + auto-ramp grouping.
-4. Spike (in parallel): 2–3 image and video providers on the same character, scored by our own style gates, to choose Phase 4 providers with data, not vibes.
-5. Wire the Claude API into the server (adapter + cache) so Phase 2 starts on solid plumbing.
+1. **MCP server + sprite program sandbox** (`apps/mcp`, the sandbox runtime). This unlocks generation on the subscription right away: Claude Code can draw, render, check and save sprites into the studio.
+2. **Platformer moveset spec:** idle, run, jump-up, apex, fall, land, dash, attack, hurt, die, as a standard template generators fill in.
+3. **Pixelize pipeline** in `packages/pixel` (port PixelRefiner's grid detection + AA removal; add the batch-shared mode).
+4. **Animated ingest:** GIF/WebP via `ImageDecoder`, MP4 via `<video>`; loop finder + stabilizer.
+5. **Material ramps** in the Style Bible + auto-ramp grouping.
+6. **Godot platformer template:** a `CharacterBody2D` scene + hitbox tracks.
+7. The image/video provider spike stays on hold until the subscription-only routes are strong.

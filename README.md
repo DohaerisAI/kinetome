@@ -9,6 +9,17 @@ npm test           # core tests
 npm run typecheck
 ```
 
+## Using sprites in Godot 4
+
+1. In the studio, pick an asset and click **Download .zip** (or **Export all → Godot** in the top bar).
+2. Unzip into your Godot project root. Files land in `res://sprites/<asset>/`:
+   - `<asset>.png`: the sheet
+   - `<asset>.tres`: a `SpriteFrames` resource with every animation (fps and loop included)
+   - `<asset>.tscn`: a ready `AnimatedSprite2D` (nearest filtering, autoplays idle, **feet on the node origin**)
+3. Instance the `.tscn` in your player scene, or assign the `.tres` to your own `AnimatedSprite2D`, then call `play("run")` etc.
+
+If the studio runs on the same machine as the Godot project, set the project folder under **Style Bible → Godot export**. **Sync** then writes the files straight in, and Godot re-imports when you switch back to it.
+
 ## Layout
 
 - `packages/core`: canonical sprite format (zod), importers (Aseprite, TexturePacker/Phaser, row-based, native), slicing (grid, auto-detect islands), palette tools (Oklab snap, alpha harden, mode-pool downscale), and the style linter.
@@ -16,6 +27,7 @@ npm run typecheck
 - `apps/studio`: React UI. Library (viewer, timeline, onion skin, inspector, style check + fixes), Lineup (whole cast on one baseline), Style Bible editor.
 - `samples/`: the code-drawn wizard (reference asset) and `offstyle-wizard.png`, a deliberately broken import for testing the style fixes.
 - `spikes/wizard`: the procedural wizard renderer that produced the sample sheet.
+- `docs/PLAN.md`: vision and roadmap. `docs/FUTURE.md`: top-down, isometric and 2.5D notes.
 
 ## Consistency model
 

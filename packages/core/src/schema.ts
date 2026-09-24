@@ -57,10 +57,19 @@ export const StyleBible = z.object({
 });
 export type StyleBible = z.infer<typeof StyleBible>;
 
+export const GodotSettings = z.object({
+  /** Absolute path to the Godot project folder (the one holding project.godot). Optional: zip export works without it. */
+  path: z.string().nullable().default(null),
+  /** Folder inside the Godot project that receives sprites, e.g. "sprites" -> res://sprites/<id>/. */
+  dir: z.string().regex(/^[A-Za-z0-9_\-/]+$/).default('sprites'),
+});
+export type GodotSettings = z.infer<typeof GodotSettings>;
+
 export const Project = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
   name: z.string().min(1),
   createdAt: z.string(),
+  godot: GodotSettings.default({ path: null, dir: 'sprites' }),
 });
 export type Project = z.infer<typeof Project>;
 

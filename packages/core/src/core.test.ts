@@ -111,3 +111,38 @@ test('downscale undoes a blurry 2x upscale by mode pooling', async () => {
   assert.deepEqual([...out.data.slice(4, 8)], [255, 0, 77, 255]); // block (1,0) stays red despite the blend
   assert.deepEqual([...out.data.slice(8, 12)], [0, 0, 0, 255]);
 });
+
+test('Godot export: SpriteFrames .tres + AnimatedSprite2D .tscn', async () => {
+  const { godotFiles, parseSheet: parse } = await import('./index.ts');
+  const json = JSON.parse(readFileSync(new URL('../../../samples/wizard/wizard.json', import.meta.url), 'utf8'));
+  const p = parse(json);
+  const asset: SpriteAsset = {
+    version: 1, id: 'wizard', name: 'Old Wizard', kind: 'character', source: 'code', image: 'sheet.png',
+    frameWidth: p.cellW, frameHeight: p.cellH, frames: p.frames.map(f => f.rect), pivot: { x: 20, y: 50 },
+    animations: p.animations, tags: [], reference: true, createdAt: '', updatedAt: '',
+  };
+  const files = godotFiles(asset, new Uint8Array([1, 2, 3]), 'art/sprites');
+  assert.deepEqual(files.map(f => f.path), ['art/sprites/wizard/wizard.png', 'art/sprites/wizard/wizard.tres', 'art/sprites/wizard/wizard.tscn']);
+  const tres = files[1].text!;
+  assert.match(tres, /^\[gd_resource type="SpriteFrames" load_steps=52 format=3\]/); // 50 atlas regions + texture + resource
+  assert.match(tres, /\[ext_resource type="Texture2D" path="res:\/\/art\/sprites\/wizard\/wizard.png" id="1_sheet"\]/);
+  assert.equal((tres.match(/\[sub_resource type="AtlasTexture"/g) ?? []).length, 50);
+  assert.match(tres, /region = Rect2\(48, 56, 48, 56\)/); // charge frame 1
+  assert.match(tres, /"name": &"cast",\n"speed": 10\.0/);
+  assert.match(tres, /"loop": false,\n"name": &"charge"/);
+  const tscn = files[2].text!;
+  assert.match(tscn, /\[node name="OldWizard" type="AnimatedSprite2D"\]/);
+  assert.match(tscn, /texture_filter = 1\n/);
+  assert.match(tscn, /autoplay = "idle"/);
+  assert.match(tscn, /offset = Vector2\(-20, -51\)/); // feet on node origin
+});
+
+test('zip writer produces a valid archive', async () => {
+  const { zip, crc32 } = await import('./index.ts');
+  assert.equal(crc32(new TextEncoder().encode('123456789')), 0xcbf43926); // standard CRC-32 check value
+  const z = zip([{ path: 'a/b.txt', data: new TextEncoder().encode('hello') }]);
+  const dv = new DataView(z.buffer);
+  assert.equal(dv.getUint32(0, true), 0x04034b50);
+  assert.equal(dv.getUint32(z.length - 22, true), 0x06054b50);
+  assert.equal(dv.getUint16(z.length - 22 + 10, true), 1);
+});

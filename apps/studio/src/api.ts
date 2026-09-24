@@ -1,4 +1,4 @@
-import type { Project, SpriteAsset, StyleBible } from '@sprite/core';
+import type { GodotSettings, Project, SpriteAsset, StyleBible } from '@sprite/core';
 
 export type AssetDraft = Omit<SpriteAsset, 'version' | 'id' | 'image' | 'createdAt' | 'updatedAt'>;
 
@@ -33,5 +33,11 @@ export const api = {
   updateAsset: (p: string, asset: SpriteAsset, png?: Blob) =>
     call<SpriteAsset>(`/projects/${p}/assets/${asset.id}`, { method: 'PUT', body: assetForm(asset, png) }),
   deleteAsset: (p: string, a: string) => call<void>(`/projects/${p}/assets/${a}`, { method: 'DELETE' }),
+  saveGodot: (p: string, godot: GodotSettings) => call<Project>(`/projects/${p}/godot`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(godot),
+  }),
+  godotZipUrl: (p: string, assetId?: string) => `/api/projects/${p}/export/godot.zip${assetId ? `?asset=${assetId}` : ''}`,
+  syncGodot: (p: string, assetId?: string) =>
+    call<{ written: string[]; root: string }>(`/projects/${p}/export/godot/sync${assetId ? `?asset=${assetId}` : ''}`, { method: 'POST' }),
   sheetUrl: (p: string, a: SpriteAsset) => `/api/projects/${p}/assets/${a.id}/sheet.png?v=${encodeURIComponent(a.updatedAt)}`,
 };

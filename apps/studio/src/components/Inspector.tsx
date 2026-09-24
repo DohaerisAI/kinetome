@@ -12,9 +12,11 @@ interface Props {
   onAnim: (name: string) => void;
   onSave: (a: SpriteAsset, png?: Blob) => Promise<void>;
   onDelete: (id: string) => void;
+  godotZipUrl: string | null;
+  onSyncGodot: (() => void) | null;
 }
 
-export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelete }: Props) {
+export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelete, godotZipUrl, onSyncGodot }: Props) {
   const pixels = usePixels(img);
   const report = useMemo(() => (asset && pixels ? lintAsset(pixels, asset, style) : null), [asset, pixels, style]);
   const [newAnim, setNewAnim] = useState({ name: '', from: 0, to: 0 });
@@ -136,6 +138,13 @@ export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelet
             ))}
           </>
         )}
+
+        <h3>Godot</h3>
+        <p className="dim small">SpriteFrames + a ready AnimatedSprite2D scene (nearest filter, feet on the origin).</p>
+        <div className="btnrow">
+          {godotZipUrl && <a className="button" href={godotZipUrl}>Download .zip</a>}
+          {onSyncGodot && <button onClick={onSyncGodot}>Sync to Godot project</button>}
+        </div>
 
         <h3>Asset</h3>
         <div className="btnrow">

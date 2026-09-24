@@ -22,7 +22,9 @@ function writeLast(id: string) {
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [pid, setPid] = useState<string | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
   const [style, setStyle] = useState<StyleBible | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [assets, setAssets] = useState<SpriteAsset[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [animName, setAnimName] = useState<string | null>(null);
@@ -47,6 +49,7 @@ export function App() {
     writeLast(pid);
     setSelectedId(null);
     Promise.all([api.getProject(pid), api.listAssets(pid)]).then(([p, list]) => {
+      setProject(p.project);
       setStyle(p.style);
       setAssets(list);
       setSelectedId(list[0]?.id ?? null);
@@ -98,6 +101,14 @@ export function App() {
     } catch (e) { fail(e); }
   };
 
+  const syncGodot = async (assetId?: string) => {
+    if (!pid) return;
+    try {
+      const r = await api.syncGodot(pid, assetId);
+      setNotice(`Wrote ${r.written.length} files into ${r.root}`);
+    } catch (e) { fail(e); }
+  };
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
@@ -126,6 +137,8 @@ export function App() {
           ))}
         </nav>
         <div className="spacer" />
+        {pid && <a className="button" href={api.godotZipUrl(pid)} title="Every asset as SpriteFrames + scenes, laid out relative to the Godot project root">Export all → Godot</a>}
+        {project?.godot.path && <button onClick={() => syncGodot()} title={project.godot.path}>Sync all to Godot</button>}
         <button className="primary" onClick={() => fileInput.current?.click()} disabled={!pid}>Import sprite…</button>
         <input
           ref={fileInput} type="file" multiple accept=".png,.json" hidden
@@ -134,6 +147,7 @@ export function App() {
       </header>
 
       {error && <div className="toast" onClick={() => setError(null)}>{error} <span className="dim">(click to dismiss)</span></div>}
+      {notice && !error && <div className="toast ok" onClick={() => setNotice(null)}>{notice} <span className="dim">(click to dismiss)</span></div>}
 
       {pid && style && tab === 'library' && (
         <main className="library">
@@ -142,6 +156,8 @@ export function App() {
           <Inspector
             asset={selected} img={img} style={style} animName={animName}
             onAnim={setAnimName} onSave={saveAsset} onDelete={removeAsset}
+            godotZipUrl={selected ? api.godotZipUrl(pid, selected.id) : null}
+            onSyncGodot={project?.godot.path && selected ? () => syncGodot(selected.id) : null}
           />
         </main>
       )}
@@ -150,8 +166,8 @@ export function App() {
           onOpen={id => { setSelectedId(id); setTab('library'); }} />
       )}
       {pid && style && tab === 'style' && (
-        <StyleView projectId={pid} style={style} assets={assets}
-          onSaved={setStyle} onError={fail} />
+        <StyleView projectId={pid} project={project} style={style} assets={assets}
+          onSaved={setStyle} onProject={setProject} onError={fail} />
       )}
       {!pid && <div className="empty">No project yet. <button className="primary" onClick={newProject}>Create one</button></div>}
 

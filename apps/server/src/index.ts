@@ -32,6 +32,18 @@ app.post('/projects', async c => {
 app.get('/projects/:p', async c => c.json(await store.getProject(c.req.param('p'))));
 app.put('/projects/:p/style', async c => c.json(await store.saveStyle(c.req.param('p'), await c.req.json())));
 
+app.put('/projects/:p/godot', async c => c.json(await store.saveGodotSettings(c.req.param('p'), await c.req.json())));
+app.get('/projects/:p/export/godot.zip', async c => {
+  const asset = c.req.query('asset') || undefined;
+  const bytes = await store.exportGodotZip(c.req.param('p'), asset);
+  const name = `${asset ?? c.req.param('p')}-godot.zip`;
+  return c.body(bytes, 200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="${name}"` });
+});
+app.post('/projects/:p/export/godot/sync', async c => {
+  const asset = c.req.query('asset') || undefined;
+  return c.json(await store.syncGodot(c.req.param('p'), asset));
+});
+
 app.get('/projects/:p/assets', async c => c.json(await store.listAssets(c.req.param('p'))));
 app.post('/projects/:p/assets', async c => {
   const { asset, png } = await readAssetForm(c.req.raw);

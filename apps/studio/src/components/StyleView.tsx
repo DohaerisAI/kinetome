@@ -1,18 +1,27 @@
 import { useEffect, useState } from 'react';
-import { countColors, StyleBible, type SpriteAsset } from '@sprite/core';
+import { countColors, StyleBible, type Project, type SpriteAsset } from '@sprite/core';
 import { api } from '../api.ts';
 import { loadImage, toPixels } from '../pixels.ts';
 
 interface Props {
   projectId: string;
+  project: Project | null;
   style: StyleBible;
   assets: SpriteAsset[];
   onSaved: (s: StyleBible) => void;
+  onProject: (p: Project) => void;
   onError: (e: unknown) => void;
 }
 
 /** The project's locked art direction. Everything is linted against it; generators will receive it verbatim. */
-export function StyleView({ projectId, style, assets, onSaved, onError }: Props) {
+export function StyleView({ projectId, project, style, assets, onSaved, onProject, onError }: Props) {
+  const [godotPath, setGodotPath] = useState(project?.godot.path ?? '');
+  const [godotDir, setGodotDir] = useState(project?.godot.dir ?? 'sprites');
+  useEffect(() => { setGodotPath(project?.godot.path ?? ''); setGodotDir(project?.godot.dir ?? 'sprites'); }, [project]);
+  const saveGodot = async () => {
+    try { onProject(await api.saveGodot(projectId, { path: godotPath.trim() || null, dir: godotDir.trim() || 'sprites' })); }
+    catch (e) { onError(e); }
+  };
   const [draft, setDraft] = useState<StyleBible>(style);
   const [newColor, setNewColor] = useState('#ffffff');
   const [paste, setPaste] = useState('');
@@ -104,6 +113,22 @@ export function StyleView({ projectId, style, assets, onSaved, onError }: Props)
                 {draft.palette.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>
+          </div>
+        </section>
+
+        <section className="card">
+          <h3>Godot export</h3>
+          <p className="dim small">Zip export always works. Set the Godot project folder (the one with project.godot) to sync files straight in; Godot re-imports when you switch back to it.</p>
+          <label className="field"><span>Godot project folder (optional)</span>
+            <input value={godotPath} onChange={e => setGodotPath(e.target.value)} placeholder="/mnt/c/Users/you/Documents/my-game" />
+          </label>
+          <label className="field"><span>Sprites folder inside the project</span>
+            <input value={godotDir} onChange={e => setGodotDir(e.target.value)} placeholder="sprites" />
+          </label>
+          <div className="btnrow">
+            <span className="dim small mono">res://{godotDir || 'sprites'}/&lt;asset&gt;/</span>
+            <div className="spacer" />
+            <button onClick={saveGodot} disabled={godotPath === (project?.godot.path ?? '') && godotDir === (project?.godot.dir ?? 'sprites')}>Save</button>
           </div>
         </section>
 

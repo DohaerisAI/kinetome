@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rm, writeFile, copyFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
-  DEFAULT_STYLE, Project, SpriteAsset, StyleBible, parseSheet, isUniform, slugify,
+  DEFAULT_STYLE, GodotSettings, Project, SpriteAsset, StyleBible, godotFiles, parseSheet, isUniform, slugify, zip,
 } from '@sprite/core';
 
 /**
@@ -48,7 +48,7 @@ export async function listProjects(): Promise<Project[]> {
 export async function createProject(name: string, style: StyleBible = DEFAULT_STYLE): Promise<Project> {
   let id = slugify(name), n = 2;
   while (await exists(join(WORKSPACE, id))) id = `${slugify(name)}-${n++}`;
-  const project: Project = { id, name, createdAt: new Date().toISOString() };
+  const project: Project = { id, name, createdAt: new Date().toISOString(), godot: { path: null, dir: 'sprites' } };
   await mkdir(join(WORKSPACE, id, 'assets'), { recursive: true });
   await writeJson(join(WORKSPACE, id, 'project.json'), project);
   await writeJson(join(WORKSPACE, id, 'style.json'), style);
@@ -145,4 +145,46 @@ export async function seedIfEmpty(): Promise<void> {
   await mkdir(assetDir(project.id, id), { recursive: true });
   await copyFile(join(SAMPLES, 'wizard', 'wizard.png'), sheetPath(project.id, id));
   await writeJson(join(assetDir(project.id, id), 'asset.json'), asset);
+}
+
+export async function saveGodotSettings(p: string, body: unknown): Promise<Project> {
+  const godot = GodotSettings.parse(body);
+  if (godot.path && !(await exists(join(godot.path, 'project.godot')))) {
+    throw new HttpError(400, `no project.godot found in ${godot.path}`);
+  }
+  const { project } = await getProject(p);
+  const next = { ...project, godot };
+  await writeJson(join(projectDir(p), 'project.json'), next);
+  return next;
+}
+
+async function collectGodotFiles(p: string, assetId?: string) {
+  const { project } = await getProject(p);
+  const assets = assetId ? [await getAsset(p, assetId)] : await listAssets(p);
+  const files = [];
+  for (const a of assets) files.push(...godotFiles(a, new Uint8Array(await readFile(sheetPath(p, a.id))), project.godot.dir));
+  return { project, files };
+}
+
+const toBytes = (f: { text?: string; binary?: Uint8Array }) => f.binary ?? new TextEncoder().encode(f.text ?? '');
+
+/** Zip laid out relative to the Godot project root: unzip into the project and it just works. */
+export async function exportGodotZip(p: string, assetId?: string): Promise<Uint8Array<ArrayBuffer>> {
+  const { files } = await collectGodotFiles(p, assetId);
+  return zip(files.map(f => ({ path: f.path, data: toBytes(f) })));
+}
+
+/** Writes straight into the configured Godot project; Godot re-imports when its window regains focus. */
+export async function syncGodot(p: string, assetId?: string): Promise<{ written: string[]; root: string }> {
+  const { project, files } = await collectGodotFiles(p, assetId);
+  const root = project.godot.path;
+  if (!root) throw new HttpError(400, 'set the Godot project path first');
+  if (!(await exists(join(root, 'project.godot')))) throw new HttpError(400, `no project.godot found in ${root}`);
+  for (const f of files) {
+    const dest = resolve(root, f.path);
+    if (!dest.startsWith(resolve(root) + '/')) throw new HttpError(400, `refusing to write outside the Godot project: ${f.path}`);
+    await mkdir(join(dest, '..'), { recursive: true });
+    await writeFile(dest, toBytes(f));
+  }
+  return { written: files.map(f => `res://${f.path}`), root };
 }
