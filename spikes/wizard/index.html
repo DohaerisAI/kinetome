@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pixel Wizard</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0a1f; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+  #ui { position: fixed; left: 12px; bottom: 12px; font: 12px/1.4 monospace; color: #9ea3d9; }
+  #ui button { font: inherit; background: #221d52; color: #e9e6f2; border: 1px solid #57507a; padding: 6px 10px; cursor: pointer; }
+  #ui button:hover { background: #3d1f6b; }
+</style>
+</head>
+<body>
+<canvas id="screen"></canvas>
+<div id="ui"><button id="exp">Export sprite sheet (S)</button></div>
+<script>
+'use strict';
+
+// ---------- constants ----------
+const W = 128, H = 96, FLOOR = 80, WIZ_X = 36;
+const PAL = {
+  sky0: '#0b0a1f', sky1: '#14133a', sky2: '#221d52', hill: '#191538',
+  star: '#cfd8ff', starDim: '#5d61a3', moon: '#f2e9c9', moonDk: '#c9bb8e',
+  stone: '#3a3552', stoneHi: '#57507a', stoneDk: '#221f33',
+  outline: '#120d1c', robeDk: '#3d1f6b', robe: '#5b2fa0', robeHi: '#7d4cc7',
+  gold: '#e8b24a', skin: '#f0b88a', skinDk: '#c07e5a',
+  beard: '#e9e6f2', beardDk: '#a9a4c0', wood: '#8a5a32', woodDk: '#4f2d18',
+  m0: '#ffffff', m1: '#9ffcff', m2: '#35d0ff', m3: '#2a6bd8', m4: '#1f2f7a',
+};
+const RAMP = [PAL.m4, PAL.m3, PAL.m2, PAL.m1, PAL.m0];
+
+const S_IDLE = 0, S_CHARGE = 1, S_CAST = 2, S_RECOVER = 3;
+const DUR = [2.0, 1.5, 0.6, 0.9];
+const NAMES = ['idle', 'charge', 'cast', 'recover'];
+const ANIM_FPS = 10;
+
+// ---------- canvases ----------
+const screen = document.getElementById('screen');
+const sctx = screen.getContext('2d');
+const off = document.createElement('canvas'); off.width = W; off.height = H;
+const octx = off.getContext('2d');
+const bg = document.createElement('canvas'); bg.width = W; bg.height = H;
+let C = octx; // current draw target (swapped for background build + sheet export)
+
+function px(c, x, y) { C.fillStyle = c; C.fillRect(x, y, 1, 1); }
+function rect(c, x, y, w, h) { if (w > 0 && h > 0) { C.fillStyle = c; C.fillRect(x, y, w, h); } }
+
+// Bresenham line, optional 2nd color one pixel to the right, clipped above clipY
+function line(x0, y0, x1, y1, c, c2, clipY) {
+  const dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+  const dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  for (;;) {
+    if (y0 < clipY) { px(c, x0, y0); if (c2) px(c2, x0 + 1, y0); }
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+}
+
+// ---------- static background (built once) ----------
+function buildBackground() {
+  C = bg.getContext('2d');
+  const e1 = 30, e2 = 56;
+  for (let y = 0; y < FLOOR; y++) {
+    for (let x = 0; x < W; x++) {
+      let c = y < e1 ? PAL.sky0 : y < e2 ? PAL.sky1 : PAL.sky2;
+      const chk = ((x + y) & 1) === 0;
+      if (y >= e1 - 3 && y < e1 && chk) c = PAL.sky1;   // dithered band edges
+      if (y >= e2 - 3 && y < e2 && chk) c = PAL.sky2;
+      px(c, x, y);
+    }
+  }
+  // moon with limb shading and craters
+  const mx = 104, my = 17, r = 7;
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const d = dx * dx + dy * dy;
+    if (d > r * r) continue;
+    px(dx < 0 && d > (r - 2) * (r - 2) ? PAL.moonDk : PAL.moon, mx + dx, my + dy);
+  }
+  px(PAL.moonDk, mx + 2, my - 2); px(PAL.moonDk, mx + 3, my - 2);
+  px(PAL.moonDk, mx - 1, my + 3); px(PAL.moonDk, mx + 3, my + 2);
+  // distant hills
+  for (let x = 0; x < W; x++) {
+    const h = 7 + Math.round(3 * Math.sin(x * 0.07) + 2 * Math.sin(x * 0.19 + 1));
+    rect(PAL.hill, x, FLOOR - h, 1, h);
+  }
+  // stone floor
+  rect(PAL.stone, 0, FLOOR, W, H - FLOOR);
+  rect(PAL.stoneHi, 0, FLOOR, W, 1);
+  for (let row = 0; row < 3; row++) {
+    const y = FLOOR + 5 + row * 5;
+    rect(PAL.stoneDk, 0, y, W, 1);
+    for (let x = (row & 1) * 6; x < W; x += 12) rect(PAL.stoneDk, x, y - 4, 1, 4);
+  }
+  C = octx;
+}
+
+// ---------- stars (fixed at init) ----------
+const STARS = 34;
+const sX = new Int16Array(STARS), sY = new Int16Array(STARS), sPh = new Float32Array(STARS);
+(function () {
+  let seed = 1337;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < STARS; i++) {
+    let x, y;
+    do { x = (rnd() * W) | 0; y = (rnd() * 52) | 0; } while (Math.abs(x - 104) < 10 && Math.abs(y - 17) < 10);
+    sX[i] = x; sY[i] = y; sPh[i] = rnd() * 6.28;
+  }
+})();
+
+// ---------- pose (pure function of state + local time, so the sheet export matches live) ----------
+const KEY = [ // arm, staff angle, head tilt, reach
+  [0.15, 0.10, 0, 0],   // idle
+  [1.00, -0.05, -1, 0], // charge: staff overhead
+  [0.55, 0.75, 1, 2],   // cast: thrust forward
+];
+const P = { arm: 0, staff: 0, tilt: 0, reach: 0, sway: 0, bob: 0, glow: 0, flick: 0 };
+const P2 = { arm: 0, staff: 0, tilt: 0, reach: 0, sway: 0, bob: 0, glow: 0, flick: 0 };
+const ease = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+
+function poseAt(s, t, o) {
+  let a, b, e;
+  if (s === S_IDLE) { a = KEY[0]; b = KEY[0]; e = 1; }
+  else if (s === S_CHARGE) { a = KEY[0]; b = KEY[1]; e = ease(t / 0.7); }
+  else if (s === S_CAST) { a = KEY[1]; b = KEY[2]; e = ease(t / 0.12); }
+  else { a = KEY[2]; b = KEY[0]; e = ease(t / 0.8); }
+  o.arm = a[0] + (b[0] - a[0]) * e;
+  o.staff = a[1] + (b[1] - a[1]) * e;
+  o.tilt = Math.round(a[2] + (b[2] - a[2]) * e);
+  o.reach = a[3] + (b[3] - a[3]) * e;
+  o.bob = s === S_IDLE ? (Math.floor(t * 2) & 1) : s === S_CAST ? 1 : 0;
+  o.sway = s === S_IDLE ? Math.round(Math.sin(t * Math.PI * 2)) :
+           s === S_CHARGE ? Math.round(Math.sin(t * 14) * 0.6) :
+           s === S_CAST ? -1 : Math.round(-1 + e);
+  o.glow = s === S_IDLE ? 0.12 : s === S_CHARGE ? 0.2 + 0.8 * (t / DUR[1]) :
+           s === S_CAST ? 1 - 0.5 * (t / DUR[2]) : 0.5 * (1 - t / DUR[3]);
+  o.flick = Math.floor(t * ANIM_FPS) & 1;
+}
+
+// ---------- wizard ----------
+const GEM = { x: 0, y: 0 }; // last drawn gem position, used by particles
+
+function drawGem(x, y, glow, flick) {
+  if (glow > 0.3) { // halo
+    const hc = glow > 0.7 ? PAL.m3 : PAL.m4;
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+      if (Math.abs(dx) + Math.abs(dy) === 3 && ((dx + dy + flick) & 1) === 0) px(hc, x + dx, y + dy);
+    }
+  }
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    const m = Math.abs(dx) + Math.abs(dy);
+    if (m === 2) px(PAL.outline, x + dx, y + dy);
+    else if (m === 1) px(glow > 0.5 ? PAL.m1 : (dy < 0 || dx < 0) ? PAL.m2 : PAL.m3, x + dx, y + dy);
+  }
+  px(glow > 0.75 || (glow > 0.4 && flick) ? PAL.m0 : PAL.m1, x, y);
+}
+
+function drawWizard(ox, fy, p) {
+  const rimOn = p.glow > 0.45;
+  const edge = rimOn ? PAL.m1 : PAL.robeHi;
+  const yTop = fy - 16 + p.bob, rows = fy - yTop;
+
+  // robe: trapezoid, hem sways
+  for (let r = 0; r < rows; r++) {
+    const t = r / (rows - 1), hw = Math.round(4 + t * 4), o = Math.round(p.sway * t * t), y = yTop + r;
+    const x0 = ox - hw + o, x1 = ox + hw - 1 + o, inner = x1 - x0 - 1;
+    if (r === 0 || r === rows - 1) { rect(PAL.outline, x0, y, x1 - x0 + 1, 1); continue; }
+    px(PAL.outline, x0, y); px(PAL.outline, x1, y);
+    if (r === 4 || r === rows - 3) { rect(PAL.gold, x0 + 1, y, inner, 1); continue; }
+    const dk = Math.max(1, Math.round(inner * 0.35));
+    rect(PAL.robeDk, x0 + 1, y, dk, 1);
+    rect(PAL.robe, x0 + 1 + dk, y, inner - dk - 1, 1);
+    px(edge, x1 - 1, y);
+    if (r > 6 && r < rows - 3) px(PAL.robeDk, ox + 1 + o, y); // fold
+  }
+
+  // head (faces right)
+  const yh = yTop - 6, hx = ox - 2;
+  px(PAL.outline, hx - 1, yh + 1); rect(PAL.outline, hx - 1, yh, 1, 5);
+  rect(PAL.skin, hx, yh, 6, 5);
+  rect(PAL.skinDk, hx, yh, 1, 5);
+  rect(PAL.outline, hx + 6, yh, 1, 2);
+  px(PAL.skin, hx + 6, yh + 2); px(PAL.outline, hx + 7, yh + 2); // nose
+  rect(PAL.beard, hx + 3, yh, 3, 1);                            // bushy brow
+  px(PAL.outline, hx + 4, yh + 1);                              // eye
+
+  // beard: tapers down, trails the sway
+  const bTop = yh + 3, bBot = yTop + 8, bl = bBot - bTop;
+  let tipX = ox + 2;
+  for (let k = 0; k < bl; k++) {
+    const t = k / (bl - 1), hw = Math.max(0, Math.round(4 - t * 3.6));
+    const cx = ox + 2 + Math.round(p.sway * 0.8 * t), x0 = cx - hw, w = hw * 2 + 1, y = bTop + k;
+    px(PAL.outline, x0 - 1, y); px(PAL.outline, x0 + w, y);
+    rect(PAL.beard, x0, y, w, 1);
+    px(PAL.beardDk, x0, y);
+    if (rimOn && w > 1) px(PAL.m1, x0 + w - 1, y);
+    tipX = cx;
+  }
+  px(PAL.outline, tipX, bBot);
+
+  // hat: brim, band, cone that droops backward at the tip
+  const yb = yh - 1;
+  rect(PAL.robe, ox - 5, yb, 15, 1); px(PAL.outline, ox - 6, yb); px(PAL.outline, ox + 10, yb);
+  rect(PAL.gold, ox - 2, yb - 1, 9, 1); px(PAL.outline, ox - 3, yb - 1); px(PAL.outline, ox + 7, yb - 1);
+  let tipCx = 0, tipY = 0;
+  for (let k = 0; k < 12; k++) {
+    const hw = Math.max(0, Math.round(3.6 - k * 0.34));
+    const bend = k > 6 ? Math.round((k - 6) * (k - 6) * 0.22) : 0;
+    const cx = ox + 2 - bend + Math.round(p.tilt * k / 11 * 1.5), y = yb - 2 - k;
+    px(PAL.outline, cx - hw - 1, y); px(PAL.outline, cx + hw + 1, y);
+    if (hw === 0) { px(PAL.robe, cx, y); }
+    else {
+      rect(PAL.robeDk, cx - hw, y, hw, 1);
+      rect(PAL.robe, cx, y, hw, 1);
+      px(rimOn ? PAL.m1 : PAL.robeHi, cx + hw, y);
+    }
+    tipCx = cx; tipY = y;
+  }
+  px(PAL.outline, tipCx, tipY - 1); px(PAL.outline, tipCx - 1, tipY + 1);
+  px(PAL.gold, ox + 2, yb - 5); // hat star
+
+  // staff (in front of body), then sleeve and hand over it
+  const shX = ox + 2, shY = yTop + 2;
+  const hX = Math.round(ox + 6 + p.reach), hY = Math.round(yTop + 8 - p.arm * 15);
+  const sx = Math.sin(p.staff), sy = -Math.cos(p.staff);
+  const tX = Math.round(hX + sx * 14), tY = Math.round(hY + sy * 14);
+  const bX = Math.round(hX - sx * 12), bY = Math.round(hY - sy * 12);
+  line(bX, bY, tX, tY, PAL.woodDk, PAL.wood, fy);
+  GEM.x = tX; GEM.y = tY - 2;
+  drawGem(GEM.x, GEM.y, p.glow, p.flick);
+  line(shX, shY, hX - 1, hY, PAL.robeDk, PAL.robe, fy);
+  line(shX, shY + 1, hX - 1, hY + 1, PAL.outline, null, fy);
+  rect(PAL.skin, hX - 1, hY - 1, 3, 2);
+  px(PAL.skinDk, hX - 1, hY);
+}
+
+// ---------- particles (preallocated pool) ----------
+const N = 320;
+const pX = new Float32Array(N), pY = new Float32Array(N), pA = new Float32Array(N), pB = new Float32Array(N);
+const pL = new Float32Array(N), pM = new Float32Array(N), pT = new Uint8Array(N), pOn = new Uint8Array(N);
+let pCursor = 0;
+const T_ORBIT = 0, T_BURST = 1, T_TRAIL = 2;
+
+function spawn(type, x, y, a, b, life) {
+  for (let i = 0; i < N; i++) {
+    const j = (pCursor + i) % N;
+    if (pOn[j]) continue;
+    pOn[j] = 1; pT[j] = type; pX[j] = x; pY[j] = y; pA[j] = a; pB[j] = b; pL[j] = life; pM[j] = life;
+    pCursor = (j + 1) % N;
+    return;
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = 0; i < N; i++) {
+    if (!pOn[i]) continue;
+    pL[i] -= dt;
+    if (pL[i] <= 0) { pOn[i] = 0; continue; }
+    if (pT[i] === T_ORBIT) {          // a = angle, b = radius: spiral into the gem
+      pA[i] += dt * 6; pB[i] -= dt * 14;
+      if (pB[i] < 1) { pOn[i] = 0; continue; }
+      pX[i] = GEM.x + Math.cos(pA[i]) * pB[i];
+      pY[i] = GEM.y + Math.sin(pA[i]) * pB[i];
+    } else {                           // a, b = velocity
+      pX[i] += pA[i] * dt; pY[i] += pB[i] * dt;
+      if (pT[i] === T_BURST) { pB[i] += 40 * dt; pA[i] *= 0.97; pB[i] *= 0.97; }
+    }
+  }
+}
+
+function drawParticles() {
+  for (let i = 0; i < N; i++) {
+    if (!pOn[i]) continue;
+    const f = pT[i] === T_ORBIT ? 1 - pB[i] / 20 : pL[i] / pM[i];
+    const ci = Math.max(0, Math.min(4, Math.floor(f * 5)));
+    px(RAMP[ci], Math.round(pX[i]), Math.round(pY[i]));
+  }
+}
+
+// ---------- projectile ----------
+const BOLT = { on: 0, x: 0, y: 0 };
+
+// ---------- simulation ----------
+let state = S_IDLE, st = 0, shake = 0, flash = 0, frame = 0;
+
+function onCast() {
+  for (let i = 0; i < 40; i++) {
+    const ang = Math.random() * Math.PI * 2, sp = 25 + Math.random() * 50;
+    spawn(T_BURST, GEM.x, GEM.y, Math.cos(ang) * sp + 15, Math.sin(ang) * sp, 0.5 + Math.random() * 0.5);
+  }
+  BOLT.on = 1; BOLT.x = GEM.x + 3; BOLT.y = GEM.y;
+  shake = 0.22; flash = 0.1;
+}
+
+function update(dt) {
+  st += dt;
+  if (st >= DUR[state]) {
+    st -= DUR[state];
+    state = (state + 1) % 4;
+    if (state === S_CAST) onCast();
+  }
+  if (state === S_CHARGE && Math.random() < 0.35 + 0.6 * (st / DUR[S_CHARGE])) {
+    const r = 10 + Math.random() * 9;
+    spawn(T_ORBIT, GEM.x, GEM.y, Math.random() * Math.PI * 2, r, r / 14);
+  }
+  if (BOLT.on) {
+    BOLT.x += 120 * dt;
+    BOLT.y += Math.sin(BOLT.x * 0.25) * 0.15;
+    spawn(T_TRAIL, BOLT.x - 2, BOLT.y + (Math.random() * 3 - 1.5), -8, Math.random() * 6 - 3, 0.35);
+    if (BOLT.x > W + 6) BOLT.on = 0;
+  }
+  updateParticles(dt);
+  if (shake > 0) shake -= dt;
+  if (flash > 0) flash -= dt;
+}
+
+// ---------- render ----------
+let scale = 1;
+function resize() {
+  scale = Math.max(1, Math.floor(Math.min(innerWidth / W, innerHeight / H)));
+  screen.width = W * scale; screen.height = H * scale;
+  sctx.imageSmoothingEnabled = false;
+}
+addEventListener('resize', resize);
+
+function render(time) {
+  C = octx;
+  octx.drawImage(bg, 0, 0);
+  for (let i = 0; i < STARS; i++) {
+    const v = Math.sin(time * 0.0017 + sPh[i] * 3 + i);
+    if (v > -0.3) px(v > 0.75 ? PAL.star : PAL.starDim, sX[i], sY[i]);
+  }
+  poseAt(state, Math.floor(st * ANIM_FPS) / ANIM_FPS, P); // 10fps pose steps
+  if (P.glow > 0.6) { // gem light pooling on the floor
+    rect(PAL.m4, WIZ_X - 10, FLOOR, 30, 1);
+    rect(PAL.m3, WIZ_X - 4, FLOOR, 16, 1);
+  }
+  drawWizard(WIZ_X, FLOOR, P);
+  drawParticles();
+  if (BOLT.on) {
+    const bx = Math.round(BOLT.x), by = Math.round(BOLT.y);
+    rect(PAL.m2, bx - 2, by - 1, 4, 3); rect(PAL.m1, bx - 1, by - 1, 3, 3); px(PAL.m0, bx, by);
+    px(PAL.m1, bx + 2, by);
+  }
+  if (flash > 0) {
+    for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) {
+      const d = dx * dx + dy * dy;
+      if (d <= 36) px(d < 9 ? PAL.m0 : PAL.m1, GEM.x + dx, GEM.y + dy);
+    }
+  }
+  const amp = shake > 0 ? (shake > 0.1 ? 2 : 1) : 0;
+  const ox = amp ? ((frame >> 1) & 1 ? amp : -amp) : 0;
+  sctx.fillStyle = PAL.sky0;
+  sctx.fillRect(0, 0, screen.width, screen.height);
+  sctx.drawImage(off, 0, 0, W, H, ox * scale, 0, W * scale, H * scale);
+}
+
+// fixed 60hz timestep
+const STEP = 1 / 60;
+let acc = 0, last = performance.now();
+function loop(now) {
+  acc += Math.min(0.25, (now - last) / 1000);
+  last = now;
+  while (acc >= STEP) { update(STEP); acc -= STEP; frame++; }
+  render(now);
+  requestAnimationFrame(loop);
+}
+
+// ---------- sprite sheet export (the bridge to a game engine) ----------
+function download(name, blob) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function exportSheet() {
+  const cw = 48, ch = 56, pivotX = 20, pivotY = 50;
+  const counts = DUR.map(d => Math.round(d * ANIM_FPS));
+  const cols = Math.max(...counts);
+  const cv = document.createElement('canvas');
+  cv.width = cw * cols; cv.height = ch * NAMES.length;
+  C = cv.getContext('2d');
+  const animations = {};
+  for (let s = 0; s < NAMES.length; s++) {
+    for (let f = 0; f < counts[s]; f++) {
+      poseAt(s, f / ANIM_FPS, P2);
+      drawWizard(f * cw + pivotX, s * ch + pivotY, P2);
+    }
+    animations[NAMES[s]] = { row: s, frames: counts[s], loop: s === S_IDLE };
+  }
+  C = octx;
+  const meta = { image: 'wizard.png', frameWidth: cw, frameHeight: ch, pivot: { x: pivotX, y: pivotY }, fps: ANIM_FPS, animations };
+  cv.toBlob(b => download('wizard.png', b));
+  download('wizard.json', new Blob([JSON.stringify(meta, null, 2)], { type: 'application/json' }));
+}
+document.getElementById('exp').addEventListener('click', exportSheet);
+addEventListener('keydown', e => { if (e.key === 's' || e.key === 'S') exportSheet(); });
+
+buildBackground();
+resize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

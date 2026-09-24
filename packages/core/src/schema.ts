@@ -1,0 +1,81 @@
+import { z } from 'zod';
+
+export const Hex = z.string().regex(/^#[0-9a-f]{6}$/i, 'expected #rrggbb');
+
+export const Rect = z.object({ x: z.number().int(), y: z.number().int(), w: z.number().int().positive(), h: z.number().int().positive() });
+export type Rect = z.infer<typeof Rect>;
+
+export const Animation = z.object({
+  name: z.string().min(1),
+  frames: z.array(z.number().int().nonnegative()), // indexes into asset.frames
+  fps: z.number().positive().max(60),
+  loop: z.boolean(),
+});
+export type Animation = z.infer<typeof Animation>;
+
+export const AssetKind = z.enum(['character', 'prop', 'fx', 'tile', 'ui']);
+export type AssetKind = z.infer<typeof AssetKind>;
+
+/**
+ * Canonical sprite asset. Every importer and generator produces this shape.
+ * Frames are always uniform cells (frameWidth x frameHeight) so one pivot aligns every frame.
+ */
+export const SpriteAsset = z.object({
+  version: z.literal(1),
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+  name: z.string().min(1),
+  kind: AssetKind,
+  source: z.enum(['imported', 'code', 'generated']),
+  image: z.string().default('sheet.png'),
+  frameWidth: z.number().int().positive(),
+  frameHeight: z.number().int().positive(),
+  frames: z.array(Rect),
+  pivot: z.object({ x: z.number().int(), y: z.number().int() }),
+  animations: z.array(Animation),
+  tags: z.array(z.string()).default([]),
+  /** True when this asset is approved as a style reference for future generation. */
+  reference: z.boolean().default(false),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type SpriteAsset = z.infer<typeof SpriteAsset>;
+
+/**
+ * The project's locked art direction. Every asset is linted against it and every
+ * generator receives it, so nothing in a project is left to the model's taste.
+ */
+export const StyleBible = z.object({
+  palette: z.array(Hex).min(2).max(256),
+  /** Height in pixels of a standard humanoid character. Keeps pixel density identical across assets. */
+  unitHeight: z.number().int().min(8).max(512),
+  maxColorsPerSprite: z.number().int().min(2).max(256),
+  outline: z.object({ mode: z.enum(['full', 'selective', 'none']), color: Hex.nullable() }),
+  lightDirection: z.enum(['top-left', 'top', 'top-right', 'front']),
+  perspective: z.enum(['side', 'three-quarter', 'top-down', 'isometric']),
+  /** Free-form art direction handed to generators verbatim. */
+  notes: z.string().default(''),
+});
+export type StyleBible = z.infer<typeof StyleBible>;
+
+export const Project = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+  name: z.string().min(1),
+  createdAt: z.string(),
+});
+export type Project = z.infer<typeof Project>;
+
+export const DEFAULT_STYLE: StyleBible = {
+  // PICO-8 palette: a sane 16-color starting point until the project locks its own.
+  palette: ['#000000', '#1d2b53', '#7e2553', '#008751', '#ab5236', '#5f574f', '#c2c3c7', '#fff1e8',
+    '#ff004d', '#ffa300', '#ffec27', '#00e436', '#29adff', '#83769c', '#ff77a8', '#ffccaa'],
+  unitHeight: 32,
+  maxColorsPerSprite: 16,
+  outline: { mode: 'selective', color: '#000000' },
+  lightDirection: 'top-left',
+  perspective: 'side',
+  notes: '',
+};
+
+export function slugify(s: string): string {
+  return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'untitled';
+}

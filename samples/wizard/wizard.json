@@ -1,0 +1,32 @@
+{
+  "image": "wizard.png",
+  "frameWidth": 48,
+  "frameHeight": 56,
+  "pivot": {
+    "x": 20,
+    "y": 50
+  },
+  "fps": 10,
+  "animations": {
+    "idle": {
+      "row": 0,
+      "frames": 20,
+      "loop": true
+    },
+    "charge": {
+      "row": 1,
+      "frames": 15,
+      "loop": false
+    },
+    "cast": {
+      "row": 2,
+      "frames": 6,
+      "loop": false
+    },
+    "recover": {
+      "row": 3,
+      "frames": 9,
+      "loop": false
+    }
+  }
+}

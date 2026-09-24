@@ -1,0 +1,57 @@
+import { serve } from '@hono/node-server';
+import { Hono } from 'hono';
+import { readFile } from 'node:fs/promises';
+import { ZodError } from 'zod';
+import * as store from './store.ts';
+
+const app = new Hono().basePath('/api');
+
+app.onError((err, c) => {
+  if (err instanceof store.HttpError) return c.json({ error: err.message }, err.status);
+  if (err instanceof ZodError) return c.json({ error: 'validation failed', issues: err.issues }, 400);
+  console.error(err);
+  return c.json({ error: 'internal error' }, 500);
+});
+
+/** Multipart body with a JSON `asset` field and an optional `image` PNG file. */
+async function readAssetForm(req: Request) {
+  const form = await req.formData();
+  const raw = form.get('asset');
+  if (typeof raw !== 'string') throw new store.HttpError(400, 'missing asset field');
+  const image = form.get('image');
+  const png = image instanceof File ? new Uint8Array(await image.arrayBuffer()) : undefined;
+  return { asset: JSON.parse(raw) as unknown, png };
+}
+
+app.get('/projects', async c => c.json(await store.listProjects()));
+app.post('/projects', async c => {
+  const { name } = await c.req.json<{ name?: string }>();
+  if (!name?.trim()) throw new store.HttpError(400, 'name required');
+  return c.json(await store.createProject(name.trim()), 201);
+});
+app.get('/projects/:p', async c => c.json(await store.getProject(c.req.param('p'))));
+app.put('/projects/:p/style', async c => c.json(await store.saveStyle(c.req.param('p'), await c.req.json())));
+
+app.get('/projects/:p/assets', async c => c.json(await store.listAssets(c.req.param('p'))));
+app.post('/projects/:p/assets', async c => {
+  const { asset, png } = await readAssetForm(c.req.raw);
+  if (!png) throw new store.HttpError(400, 'missing image');
+  return c.json(await store.createAsset(c.req.param('p'), asset, png), 201);
+});
+app.put('/projects/:p/assets/:a', async c => {
+  const { asset, png } = await readAssetForm(c.req.raw);
+  return c.json(await store.updateAsset(c.req.param('p'), c.req.param('a'), asset, png));
+});
+app.delete('/projects/:p/assets/:a', async c => {
+  await store.deleteAsset(c.req.param('p'), c.req.param('a'));
+  return c.body(null, 204);
+});
+app.get('/projects/:p/assets/:a/sheet.png', async c => {
+  const buf = await readFile(store.sheetPath(c.req.param('p'), c.req.param('a'))).catch(() => null);
+  if (!buf) throw new store.HttpError(404, 'not found');
+  return c.body(buf, 200, { 'content-type': 'image/png', 'cache-control': 'no-cache' });
+});
+
+const port = Number(process.env.PORT ?? 4317);
+await store.seedIfEmpty();
+serve({ fetch: app.fetch, port }, () => console.log(`sprite server on http://localhost:${port}  (workspace: ${store.WORKSPACE})`));

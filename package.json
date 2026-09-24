@@ -1,0 +1,12 @@
+{
+  "name": "sprite",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "concurrently -k -n server,studio -c magenta,cyan \"npm run dev -w @sprite/server\" \"npm run dev -w @sprite/studio\"",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm test -w @sprite/core"
+  },
+  "devDependencies": { "concurrently": "^9.2.0" }
+}
