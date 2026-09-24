@@ -225,7 +225,7 @@ export function Viewer({ asset, img, animName, onAnim }: { asset: SpriteAsset | 
       <div className="timeline">
         {frames.map((f, i) => (
           <button key={i} className={i === pos ? 'cell active' : 'cell'} onClick={() => { setPlaying(false); setPos(i); }} title={`Frame ${i + 1} (sheet #${f})`}>
-            <FrameThumb img={img} rect={asset?.frames[f]} size={44} />
+            <FrameThumb img={img} rect={asset?.frames[f]} size={44} crop={false} />
             <span className="mono">{i + 1}</span>
           </button>
         ))}

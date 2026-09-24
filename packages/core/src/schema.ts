@@ -113,6 +113,10 @@ export const MoveDraft = z.object({
   poses: z.array(z.string()).default([]),
   /** How this character's body and story shape the move (e.g. a peg leg makes the walk limp). */
   notes: z.string().default(''),
+  /** Visual effects the move needs (particles, trails, impacts), in the user's words. */
+  effects: z.string().default(''),
+  /** Uploaded pose reference images (e.g. rough key poses from Gemini) that guide Claude. File names. */
+  refImages: z.array(z.string()).default([]),
 });
 export type MoveDraft = z.infer<typeof MoveDraft>;
 
@@ -139,6 +143,8 @@ export const CharacterDesign = z.object({
   code: z.string().nullable().default(null),
   /** The program animates the reference sprite's own pixels (cut-out rig) instead of drawing from scratch. */
   codeRig: z.boolean().default(false),
+  /** One sprite program per animation (preferred): editing a move never re-outputs the others. Overrides `code`. */
+  programs: z.record(z.string(), z.string()).default({}),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

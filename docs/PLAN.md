@@ -262,6 +262,12 @@ Tilesets with autotile rules and seam lint, props, VFX generator, UI kits, pixel
 
 Built: Characters workspace (design + part color ramps, Claude brief, moves with Claude-drafted poses, Gemini prompts, character-linked imports), draw-with-code route (sandboxed record/replay renderer, streamed write→render→review loop), polished player. Measured Claude costs: brief ~1.5k tokens, move draft ~2.3k, code route ~45k output tokens / 8 min per 10 frames + 1 review round.
 
+## 6c. Workflow decided (2026-09-24)
+
+Gemini makes images (character reference sprites, optional rough pose references per move); Claude makes every final animation with code on the reference art (cut-out rig: parts of the real pixels + drawn effects), one program per animation. Measured on Opus: walk (10f) ~40k output tokens, heavy effects attack (18f, 2 review rounds) ~75k; a new small move on Sonnet ~15k; refining one move ~10-15k.
+
+**Next (2026-09-25): full sprite editor** for touch-ups on any frame of any animation: pixel pencil/eraser/fill/picker locked to the character palette, selection + move, per-frame layers (character / effects), onion skin, frame add/duplicate/delete/reorder, timeline with per-frame duration, undo/redo, "apply this fix to all frames" for recurring details, and edits stored as a patch layer on top of generated frames so re-generating a move doesn't lose manual fixes.
+
 ## 7. Next steps (concrete, in order)
 
 1. **MCP server + sprite program sandbox** (`apps/mcp`, the sandbox runtime). This unlocks generation on the subscription right away: Claude Code can draw, render, check and save sprites into the studio.

@@ -35,7 +35,7 @@ export interface SpriteProgram {
 export interface Rig { ref: PixelImage; pad: number; parts: Record<string, PartSpec> }
 
 export interface RenderedAnim { name: string; fps: number; loop: boolean; frames: PixelImage[] }
-export interface RenderOutput { width: number; height: number; pivot: { x: number; y: number }; animations: RenderedAnim[] }
+export interface RenderOutput { width: number; height: number; pivot: { x: number; y: number }; animations: RenderedAnim[]; /** Every animation the program defines, rendered or not. */ allAnimations?: string[] }
 
 export interface Gfx {
   readonly w: number;

@@ -178,13 +178,14 @@ test('design palette names every part in three shades plus outline', async () =>
     id: 'kai', name: 'Kai', lore: 'exiled blade dancer', personality: 'calm', build: 'lean', outfit: 'long coat', details: 'scar over left eye',
     parts: [{ name: 'Main cloth', color: '#3d5aa8' }, { name: 'Skin', color: '#e8b796' }], outline: '#1a1420', pixelHeight: 40,
     description: 'a lean blade dancer in a long blue coat', referencePose: 'idle', assetId: null, moves: [], code: null, createdAt: '', updatedAt: '',
-    invariants: ['Left leg is a wooden peg from the knee down'], codeRig: false,
+    invariants: ['Left leg is a wooden peg from the knee down'], codeRig: false, programs: {},
   };
   const c = designColors(design);
   assert.deepEqual(Object.keys(c).sort(), ['main-cloth', 'main-cloth.light', 'main-cloth.shadow', 'outline', 'skin', 'skin.light', 'skin.shadow']);
-  const m = { ...newMove('attack'), description: 'spins once then cuts upward', poses: ['a', 'b', 'c', 'd', 'e', 'f'] };
+  const m = { ...newMove('attack'), description: 'spins once then cuts upward', effects: 'red sash arc', poses: ['a', 'b', 'c', 'd', 'e', 'f'] };
   const p = designMovePrompt(DEFAULT_STYLE, design, m);
   assert.match(p, /How Kai performs it: spins once then cuts upward/);
+  assert.match(p, /Effects: red sash arc/);
   assert.match(p, /- Main cloth: base #3d5aa8/);
   assert.match(p, /\n6 \(row 2, column 3\): f/, 'six frames become a 2x3 grid with positions');
   assert.match(p, /A grid of 2 rows x 3 columns = exactly 6 frames/);

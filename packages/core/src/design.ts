@@ -134,6 +134,7 @@ export function designMovePrompt(style: StyleBible, d: CharacterDesign, m: MoveD
     'THE MOVE',
     ...(m.description.trim() ? [`How ${d.name} performs it: ${m.description.trim()}`] : []),
     ...(m.notes.trim() ? [`Direction: ${m.notes.trim()}`] : []),
+    ...(m.effects.trim() ? [`Effects: ${m.effects.trim()}`] : []),
     `Motion weight: ${m.weight === 'heavy' ? 'heavy and powerful (big anticipation, strong impact, slower recovery)' : m.weight === 'light' ? 'light and quick (small anticipation, snappy)' : 'normal'}.`,
     ...(m.loop ? ['It loops: the last frame must flow smoothly back into the first.'] : []),
     'The character stays in place (no travel across the sheet), facing right in every frame.',
@@ -170,5 +171,7 @@ export function newMove(presetId: string | null, name?: string): MoveDraft {
     weight: 'normal',
     poses: p ? [...p.poses] : [],
     notes: '',
+    effects: '',
+    refImages: [],
   };
 }

@@ -7,10 +7,34 @@ export interface Packed { sheet: string; frameWidth: number; frameHeight: number
 export type CodeEvent =
   | { type: 'status'; step: 'writing' | 'reviewing' | 'rendering'; iteration: number; total: number; message: string }
   | { type: 'iteration'; iteration: number; total: number; notes: string; code: string; usage: Usage; preview?: string; packed?: Packed; error?: string }
-  | { type: 'done'; ok: boolean; code: string | null; usage: Usage; packed: Packed | null }
+  | { type: 'done'; ok: boolean; code: string | null; usage: Usage; packed: Packed | null; design?: CharacterDesign | null }
   | { type: 'fail'; message: string; usage: Usage };
 
 const json = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+/** POSTs JSON and parses the server-sent event stream until it ends. */
+async function readStream(url: string, body: unknown, onEvent: (e: CodeEvent) => void, signal?: AbortSignal) {
+  const res = await fetch(url, { ...json(body), signal });
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? `${res.status} ${res.statusText}`);
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let cut;
+    while ((cut = buf.indexOf('\n\n')) >= 0) {
+      const block = buf.slice(0, cut); buf = buf.slice(cut + 2);
+      const ev = /^event: (.+)$/m.exec(block)?.[1];
+      const data = block.split('\n').filter(l => l.startsWith('data: ')).map(l => l.slice(6)).join('\n');
+      if (ev && data) onEvent({ type: ev, ...JSON.parse(data) } as CodeEvent);
+    }
+  }
+}
 
 export type AssetDraft = Omit<SpriteAsset, 'version' | 'id' | 'image' | 'createdAt' | 'updatedAt'>;
 
@@ -60,30 +84,19 @@ export const api = {
   describe: (p: string, id: string, model: Model) => call<{ design: CharacterDesign; conflicts: string[]; usage: Usage }>(`/projects/${p}/characters/${id}/describe`, json({ model })),
   draftMove: (p: string, id: string, move: string, model: Model, instruction?: string) =>
     call<{ design: CharacterDesign; usage: Usage }>(`/projects/${p}/characters/${id}/moves/${move}/draft`, json({ model, instruction })),
-  renderCode: (p: string, id: string, code: string) =>
+  renderCode: (p: string, id: string, code?: string) =>
     call<{ ok: true; packed: Packed; preview: string } | { ok: false; error: string }>(`/projects/${p}/characters/${id}/code/render`, json({ code })),
   /** Streams the write -> render -> review loop. Resolves when the stream ends. */
-  async runCode(p: string, id: string, body: { model: Model; animations: string[]; rounds: number; feedback?: string; fromCurrent?: boolean; useReference?: boolean }, onEvent: (e: CodeEvent) => void, signal?: AbortSignal) {
-    const res = await fetch(`/api/projects/${p}/characters/${id}/code/run`, { ...json(body), signal });
-    if (!res.ok || !res.body) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error ?? `${res.status} ${res.statusText}`);
-    }
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let cut;
-      while ((cut = buf.indexOf('\n\n')) >= 0) {
-        const block = buf.slice(0, cut); buf = buf.slice(cut + 2);
-        const ev = /^event: (.+)$/m.exec(block)?.[1];
-        const data = block.split('\n').filter(l => l.startsWith('data: ')).map(l => l.slice(6)).join('\n');
-        if (ev && data) onEvent({ type: ev, ...JSON.parse(data) } as CodeEvent);
-      }
-    }
+  runCode: (p: string, id: string, body: { model: Model; animations: string[]; rounds: number; feedback?: string; fromCurrent?: boolean; useReference?: boolean }, onEvent: (e: CodeEvent) => void, signal?: AbortSignal) =>
+    readStream(`/api/projects/${p}/characters/${id}/code/run`, body, onEvent, signal),
+  /** One move: new program, add to the existing one, remake or refine; other animations are kept. */
+  animate: (p: string, id: string, body: { model: Model; move: string; mode?: 'auto' | 'remake' | 'refine'; rounds: number; feedback?: string; useReference?: boolean }, onEvent: (e: CodeEvent) => void, signal?: AbortSignal) =>
+    readStream(`/api/projects/${p}/characters/${id}/code/animate`, body, onEvent, signal),
+  uploadMoveRef: (p: string, id: string, move: string, file: File) => {
+    const f = new FormData(); f.set('image', file, file.name);
+    return call<CharacterDesign>(`/projects/${p}/characters/${id}/moves/${move}/refs`, { method: 'POST', body: f });
   },
+  deleteMoveRef: (p: string, id: string, move: string, file: string) => call<CharacterDesign>(`/projects/${p}/characters/${id}/moves/${move}/refs/${file}`, { method: 'DELETE' }),
+  moveRefUrl: (p: string, id: string, move: string, file: string) => `/api/projects/${p}/characters/${id}/moves/${move}/refs/${file}`,
   sheetUrl: (p: string, a: SpriteAsset) => `/api/projects/${p}/assets/${a.id}/sheet.png?v=${encodeURIComponent(a.updatedAt)}`,
 };

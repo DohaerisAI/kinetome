@@ -4,18 +4,16 @@ import { api, type Model, type Usage } from '../../api.ts';
 import { Icon, type IconName } from '../../icons.tsx';
 import { loadImage, toPixels, useImage } from '../../pixels.ts';
 import { FrameThumb } from '../FrameThumb.tsx';
-import { CodeTab } from './CodeTab.tsx';
+import { AnimationsTab } from './AnimationsTab.tsx';
 import { DesignTab } from './DesignTab.tsx';
-import { MovesTab } from './MovesTab.tsx';
 import { ReferenceTab } from './ReferenceTab.tsx';
 import { usageText, type ImportRequest, type TabProps } from './shared.tsx';
 
-type Sub = 'design' | 'reference' | 'moves' | 'code';
+type Sub = 'design' | 'reference' | 'animations';
 const SUBS: { id: Sub; label: string; icon: IconName; hint: string }[] = [
-  { id: 'design', label: 'Design', icon: 'palette', hint: 'Who they are, colors per part' },
-  { id: 'reference', label: 'Reference', icon: 'image', hint: 'The master sprite (Gemini)' },
-  { id: 'moves', label: 'Moves', icon: 'film', hint: 'Animations via Gemini' },
-  { id: 'code', label: 'Draw with code', icon: 'code', hint: 'Claude draws it, no images needed' },
+  { id: 'design', label: 'Design', icon: 'palette', hint: 'Lore, colors per part, what never changes' },
+  { id: 'reference', label: 'Reference', icon: 'image', hint: 'The master sprite, drawn in Gemini' },
+  { id: 'animations', label: 'Animations', icon: 'film', hint: 'Claude animates the reference with code' },
 ];
 
 interface Props {
@@ -176,7 +174,7 @@ export function CharactersView({ projectId, style, assets, model, onUsage, onImp
             <div className="chars-title">
               <input className="title-input" value={design.name} onChange={e => update({ ...design, name: e.target.value })} aria-label="Character name" />
               <span className="dim small">
-                {linked ? <>In library as <strong>{linked.name}</strong> · {linked.animations.map(a => a.name).join(', ')}</> : 'Not in the library yet: import a reference or draw it with code'}
+                {linked ? <>In library as <strong>{linked.name}</strong> · {linked.animations.map(a => a.name).join(', ')}</> : 'Not in the library yet: start with Design, then import a reference from Gemini'}
               </span>
             </div>
             <div className="spacer" />
@@ -193,8 +191,7 @@ export function CharactersView({ projectId, style, assets, model, onUsage, onImp
           <div className="chars-body">
             {sub === 'design' && <DesignTab {...props} onNext={() => setSub('reference')} />}
             {sub === 'reference' && <ReferenceTab {...props} />}
-            {sub === 'moves' && <MovesTab {...props} />}
-            {sub === 'code' && <CodeTab {...props} />}
+            {sub === 'animations' && <AnimationsTab {...props} />}
           </div>
         </section>
       ) : (

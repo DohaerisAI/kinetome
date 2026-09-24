@@ -16,7 +16,7 @@ export function ReferenceTab({ projectId, style, design: d, assets, importFor }:
       <section className="card wide hero-card">
         <div className="hero-text">
           <h3>The reference sprite</h3>
-          <p>One master image of {d.name} in your game's pixel style. Every animation is drawn from it, so regenerate in Gemini until you truly love it.</p>
+          <p>One master image of {d.name} in your game's pixel style. Claude animates this exact art, so regenerate in Gemini until you truly love it, and make sure the limbs you want animated are visible (a robe that hides the legs limits leg moves).</p>
           <GeminiSteps withReference={false} />
           <div className="btnrow">
             <CopyButton text={prompt} />

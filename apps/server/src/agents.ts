@@ -63,6 +63,7 @@ export async function draftMove(style: StyleBible, d: CharacterDesign, m: MoveDr
       '',
       `Move: ${m.name}. ${m.frames} frames at ${m.fps} fps, ${m.loop ? 'looping (last frame flows into the first)' : 'plays once'}. Weight: ${m.weight}.`,
       m.description && `How ${d.name} performs it (the user's words, follow them closely): ${m.description}`,
+      m.effects && `Effects the move needs (stage them frame by frame in the poses): ${m.effects}`,
       preset && !m.description && `Standard breakdown for reference: ${preset.poses.join(' | ')}`,
       m.poses.length && instruction ? `Current poses:\n${m.poses.map((p, i) => `${i + 1}. ${p}`).join('\n')}` : '',
       instruction ? `Revise the poses according to this request: ${instruction}` : '',
@@ -87,7 +88,7 @@ export async function draftMove(style: StyleBible, d: CharacterDesign, m: MoveDr
 
 // ---------- 3. draw with code ----------
 
-export interface CodeAnim { name: string; frames: number; fps: number; loop: boolean; description: string; poses: string[] }
+export interface CodeAnim { name: string; frames: number; fps: number; loop: boolean; description: string; poses: string[]; effects?: string; refPaths?: string[] }
 
 /** Cell size that fits the design's height with room for weapons and effects. */
 export function cellFor(d: CharacterDesign) {
@@ -95,6 +96,17 @@ export function cellFor(d: CharacterDesign) {
   const w = Math.round(d.pixelHeight * 1.4);
   return { width: w, height: h, pivot: [Math.floor(w / 2), h - 3] as [number, number] };
 }
+
+/** What a lead FX animator knows; handed to every code-drawing run. */
+const EFFECTS_CRAFT = [
+  'EFFECTS CRAFT (use what the move calls for; palette names only; readable at 1x)',
+  '- Force comes from timing: slow anticipation, a fast strike, a 1-2 frame hit-stop, then eased recovery. Squash the body 2-4px on impact and add 1px jitter on hit-stop frames.',
+  '- Smears: a crescent of pixels along the path of a fast limb or weapon for 1-3 frames, fading.',
+  '- Impacts: a short star-burst flash (lightest palette tone), dust puffs billowing along the ground, crack lines from the contact point, a flat shockwave arc expanding over 3-4 frames.',
+  '- Particles (leaves, sparks, embers, magic): integrate them deterministically from t=0 inside draw(). For fluid swirling motion advect them through a curl-noise flow field (hash-based 2D value noise, curl = gradient rotated 90 degrees). Give particles 3-5px shapes with 2 tones and a few orientation variants, colour them by age/height, and fade them out by shrinking or thinning, never popping.',
+  '- Volume effects (tornado, vortex, beam): combine structure (stacked spiral streaks, a helix, a core line) with particles; draw the far half behind the character in darker tones and the near half in front for depth.',
+  '- Secondary motion: loose cloth, hair, beards and scarves lag the body by 1-2 frames and overshoot; every frame should change something except deliberate holds.',
+].join('\n');
 
 function rigSystem(style: StyleBible, d: CharacterDesign, rig: RigContext): string {
   const colors = designColors(d);
@@ -120,7 +132,9 @@ function rigSystem(style: StyleBible, d: CharacterDesign, rig: RigContext): stri
     '- When a moving part uncovers a gap (e.g. the leg moved and exposes empty space under the robe), patch it with a few pixels in the right palette color, or draw a new simple limb segment with g.line/g.poly. Keep patches minimal and consistent frame to frame.',
     '- Everything in the must-never-change list stays visible in every frame (it comes from the reference, so do not crop it out of the parts).',
     '- Feet/contact points on the ground row in grounded frames; the loop closes seamlessly; body bob by whole pixels.',
-    '- Be concise: part table, a keyframe table per animation, one draw helper. Aim for under 200 lines. Do not call g.outline() (the reference already has its outline) unless you drew new silhouette pixels that need it.',
+    '- Be concise: part table, a keyframe table per animation, one draw helper per animation. Do not call g.outline() (the reference already has its outline) unless you drew new silhouette pixels that need it.',
+    '',
+    EFFECTS_CRAFT,
   ].join('\n');
 }
 
@@ -150,27 +164,46 @@ function codeSystem(style: StyleBible, d: CharacterDesign, rig?: RigContext | nu
     '- Readable silhouette at 1x, clean pixel clusters, no single stray pixels, feet planted on the ground row in grounded frames.',
     '- Use animation principles: anticipation, strong key pose, follow-through; loops must close seamlessly.',
     '- Be concise: one shared body/pose helper, keyframe tables per animation, no comments beyond short labels. Aim for under 220 lines.',
+    '',
+    EFFECTS_CRAFT,
   ].join('\n');
 }
 
 function animLines(anims: CodeAnim[]): string {
   return anims.map(a => [
-    `- ${a.name}: ${a.frames} frames, ${a.fps} fps, ${a.loop ? 'loop' : 'once'}${a.description ? `. How: ${a.description}` : ''}`,
+    `- ${a.name}: ${a.frames} frames, ${a.fps} fps, ${a.loop ? 'loop' : 'once'}${a.description ? `. How: ${a.description}` : ''}${a.effects ? ` Effects: ${a.effects}` : ''}`,
+    ...(a.refPaths?.length ? [`    Pose reference images (Read them; follow their poses, silhouettes and staging, but keep the character's own art): ${a.refPaths.join(', ')}`] : []),
     ...a.poses.map((p, i) => `    ${i + 1}. ${p}`),
   ].join('\n')).join('\n');
 }
 
-export async function writeProgram(style: StyleBible, d: CharacterDesign, anims: CodeAnim[], model: Model, feedback?: string, rig?: RigContext | null): Promise<ClaudeResult<{ code: string; notes: string }>> {
+/** Directories Claude needs Read access to: pose references (+ extra files like renders). */
+function readDirs(anims: CodeAnim[], ...files: (string | undefined)[]): string[] {
+  const all = [...anims.flatMap(a => a.refPaths ?? []), ...files.filter((f): f is string => !!f)];
+  return [...new Set(all.map(f => f.replace(/\/[^/]+$/, '')))];
+}
+
+/** Another program of the same character: reuse its parts table and style so every animation matches. */
+function contextBlock(context?: string): string {
+  return context ? [
+    '',
+    'EXISTING PROGRAM of this character (for another animation). Reuse its part table (same names, polygons and pivots), canvas height, pivot and drawing style exactly so this animation matches it. Do NOT include its other animations in your program: write a standalone program that defines ONLY the animation(s) listed below.',
+    '```js', context, '```',
+  ].join('\n') : '';
+}
+
+export async function writeProgram(style: StyleBible, d: CharacterDesign, anims: CodeAnim[], model: Model, feedback?: string, rig?: RigContext | null, context?: string): Promise<ClaudeResult<{ code: string; notes: string }>> {
   if (rig) return runClaude({
     task: 'code-write', model, timeoutMs: 900_000,
     system: codeSystem(style, d, rig),
-    tools: ['Read'], dirs: [rig.imagePath.replace(/\/[^/]+$/, '')],
+    tools: ['Read'], dirs: readDirs(anims, rig.imagePath),
     prompt: [
       `Animate ${d.name}. First Read the reference image at ${rig.imagePath} (scaled up; light grid lines every 10 reference pixels) to understand the character, then use the exact pixel map below to cut parts.`,
       `Character: ${d.description || rawBrief(d) || d.name}`,
       d.invariants.length ? `Must stay visible in every frame: ${d.invariants.join('; ')}` : '',
       '',
       rig.pixelMap,
+      contextBlock(context),
       '',
       'Animations to implement (exact names):',
       animLines(anims),
@@ -179,14 +212,17 @@ export async function writeProgram(style: StyleBible, d: CharacterDesign, anims:
     ].filter(Boolean).join('\n'),
     schema: codeSchema,
   });
+  const scratchDirs = readDirs(anims);
   return runClaude({
     task: 'code-write', model, timeoutMs: 600_000,
     system: codeSystem(style, d),
+    tools: scratchDirs.length ? ['Read'] : [], dirs: scratchDirs,
     prompt: [
       'Draw this character:',
       d.description || rawBrief(d) || d.name,
       d.details && `Signature details: ${d.details}`,
       d.invariants.length && `Must be visible in every frame: ${d.invariants.join('; ')}`,
+      contextBlock(context),
       '',
       'Animations to implement (exact names):',
       animLines(anims),
@@ -202,7 +238,7 @@ export async function reviseProgram(
   prev: { code: string; sheetPath?: string; sheetAnims?: CodeAnim[]; error?: string; feedback?: string },
   rig?: RigContext | null,
 ): Promise<ClaudeResult<{ code: string; notes: string }>> {
-  const dirs = [...new Set([prev.sheetPath, rig?.imagePath].filter((x): x is string => !!x).map(x => x.replace(/\/[^/]+$/, '')))];
+  const dirs = readDirs(anims, prev.sheetPath, rig?.imagePath);
   return runClaude({
     task: 'code-revise', model, timeoutMs: rig ? 900_000 : 600_000,
     system: codeSystem(style, d, rig),
@@ -317,7 +353,7 @@ export function executeProgram(code: string, colors: Record<string, string>, onl
         return img;
       }),
     }));
-  return { width: spec.width, height: spec.height, pivot: { x: Math.round(spec.pivot[0]), y: Math.round(spec.pivot[1]) }, animations };
+  return { width: spec.width, height: spec.height, pivot: { x: Math.round(spec.pivot[0]), y: Math.round(spec.pivot[1]) }, animations, allAnimations: Object.keys(spec.animations) };
 }
 
 function replay(g: Gfx, op: Op): void {
