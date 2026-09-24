@@ -9,6 +9,7 @@ import {
 import { cellFor, draftMove, executeProgram, polishDescription, reviseProgram, writeProgram, type CodeAnim } from './agents.ts';
 import { claudeStatus, logUsage, readUsage, type ClaudeUsage, type Model } from './claude.ts';
 import { encodePng } from './png.ts';
+import { buildRig, paddedReference } from './rig.ts';
 import * as store from './store.ts';
 
 const MODELS: Model[] = ['sonnet', 'opus', 'haiku'];
@@ -35,7 +36,11 @@ function codeAnims(d: CharacterDesign, names: string[]): CodeAnim[] {
   return wanted.map(n => {
     const m = d.moves.find(x => x.id === n);
     const p = PLATFORMER_MOVES.find(x => x.id === n);
-    if (m) return { name: m.id, frames: m.frames, fps: m.fps, loop: m.loop, description: m.description, poses: m.poses.length === m.frames ? m.poses : (p?.frames === m.frames ? p.poses : []) };
+    if (m) return {
+      name: m.id, frames: m.frames, fps: m.fps, loop: m.loop,
+      description: [m.description, m.notes && `Direction: ${m.notes}`].filter(Boolean).join(' '),
+      poses: m.poses.length === m.frames && m.poses.every(x => x.trim()) ? m.poses : (p?.frames === m.frames ? p.poses : []),
+    };
     if (p) return { name: p.id, frames: p.frames, fps: p.fps, loop: p.loop, description: '', poses: p.poses };
     return { name: n, frames: 4, fps: 8, loop: true, description: '', poses: [] };
   });
@@ -95,8 +100,9 @@ characters.post('/projects/:p/characters/:c/code/render', async c => {
   const src = code ?? d.code;
   if (!src) throw new store.HttpError(400, 'no program yet');
   try {
-    const out = executeProgram(src, designColors(d));
-    return c.json({ ok: true, packed: pack(out), preview: dataUrl(encodePng(contactSheet(out))) });
+    const rig = d.codeRig ? await buildRig(c.req.param('p'), d, join(store.projectPath(c.req.param('p')), '.renders', d.id)) : null;
+    const out = executeProgram(src, designColors(d), undefined, rig);
+    return c.json({ ok: true, packed: pack(out), preview: dataUrl(encodePng(contactSheet(out, 1500, rig ? paddedReference(rig) : undefined))) });
   } catch (e) {
     return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) });
   }
@@ -109,7 +115,7 @@ characters.post('/projects/:p/characters/:c/code/render', async c => {
  */
 characters.post('/projects/:p/characters/:c/code/run', async c => {
   const p = c.req.param('p'), id = c.req.param('c');
-  const body = await c.req.json<{ model?: string; animations?: string[]; rounds?: number; feedback?: string; fromCurrent?: boolean }>();
+  const body = await c.req.json<{ model?: string; animations?: string[]; rounds?: number; feedback?: string; fromCurrent?: boolean; useReference?: boolean }>();
   const model = modelOf(body.model);
   const rounds = Math.max(0, Math.min(3, body.rounds ?? 1));
   const [{ style }, design] = await Promise.all([store.getProject(p), store.getCharacter(p, id)]);
@@ -117,6 +123,11 @@ characters.post('/projects/:p/characters/:c/code/run', async c => {
   const colors = designColors(design);
   const renders = join(store.projectPath(p), '.renders', id);
   await mkdir(renders, { recursive: true });
+  const rig = body.useReference ? await buildRig(p, design, renders) : null;
+  if (body.useReference && !rig) throw new store.HttpError(400, 'This character has no reference sprite in the library yet');
+  // a revision keeps the mode of the program it revises
+  if (body.fromCurrent && design.code && design.codeRig !== !!rig) throw new store.HttpError(400, design.codeRig ? 'The current program animates the reference; keep "Use reference" on, or redraw from scratch' : 'The current program was drawn from scratch; turn "Use reference" off, or redraw');
+  const refRow = rig ? paddedReference(rig) : undefined;
 
   return streamSSE(c, async stream => {
     const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data) });
@@ -134,9 +145,9 @@ characters.post('/projects/:p/characters/:c/code/run', async c => {
         if (code) {
           // render the current program so Claude can see it
           try {
-            const out = executeProgram(code, colors, anims.map(a => a.name));
+            const out = executeProgram(code, colors, anims.map(a => a.name), rig);
             sheetPath = join(renders, `iter-${Date.now()}.png`);
-            await writeFile(sheetPath, encodePng(contactSheet(out)));
+            await writeFile(sheetPath, encodePng(contactSheet(out, 1500, refRow)));
           } catch (e) { error = e instanceof Error ? e.message : String(e); }
         }
 
@@ -146,24 +157,24 @@ characters.post('/projects/:p/characters/:c/code/run', async c => {
             : error ? 'Fixing an error in the program…' : feedback ? 'Applying your feedback…' : `Reviewing the render and fixing problems (round ${i} of ${rounds})…`,
         });
         const r = needsWrite
-          ? await writeProgram(style, design, anims, model, feedback)
-          : await reviseProgram(style, design, anims, model, { code: code!, sheetPath, error, feedback });
+          ? await writeProgram(style, design, anims, model, feedback, rig)
+          : await reviseProgram(style, design, anims, model, { code: code!, sheetPath, error, feedback }, rig);
         await logUsage(store.projectPath(p), needsWrite ? 'code-write' : 'code-revise', r);
         usage = sum(usage, r.usage);
         code = r.data.code;
 
         await send('status', { step: 'rendering', iteration: i + 1, total, message: 'Rendering frames…' });
         try {
-          const out = executeProgram(code, colors, anims.map(a => a.name));
+          const out = executeProgram(code, colors, anims.map(a => a.name), rig);
           lastGood = code; lastOut = out;
-          await send('iteration', { iteration: i + 1, total, notes: r.data.notes, code, usage: r.usage, preview: dataUrl(encodePng(contactSheet(out))), packed: pack(out) });
+          await send('iteration', { iteration: i + 1, total, notes: r.data.notes, code, usage: r.usage, preview: dataUrl(encodePng(contactSheet(out, 1500, refRow))), packed: pack(out) });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           // the next round (if any) sees this error and fixes it; otherwise we finish with the last good program
           await send('iteration', { iteration: i + 1, total, notes: r.data.notes, code, usage: r.usage, error: msg });
         }
       }
-      if (lastGood) await store.saveCharacter(p, id, { ...(await store.getCharacter(p, id)), code: lastGood });
+      if (lastGood) await store.saveCharacter(p, id, { ...(await store.getCharacter(p, id)), code: lastGood, codeRig: !!rig });
       await send('done', { ok: !!lastGood, code: lastGood ?? code, usage, packed: lastOut ? pack(lastOut) : null, cell: cellFor(design) });
     } catch (e) {
       await send('fail', { message: e instanceof Error ? e.message : String(e), usage });

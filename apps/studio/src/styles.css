@@ -307,6 +307,9 @@ button.small { font-size: 12px; padding: 3px 7px; }
 .revise input { flex: 1; }
 
 .code-tab .card { align-self: stretch; }
+.ref-mode { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); background: #121219; cursor: pointer; margin-bottom: 12px; }
+.ref-mode.on { border-color: var(--accent); background: var(--accent-soft); }
+.ref-mode input { flex: none; }
 .run-status { margin-top: 12px; display: grid; grid-template-columns: auto 1fr auto; gap: 8px 10px; align-items: center; padding: 10px 12px; border: 1px solid #4a3a55; border-radius: var(--r); background: #1d1822; color: #f3d9c9; }
 .run-status .spinner { color: var(--claude); }
 .progress { grid-column: 1 / -1; height: 3px; background: var(--panel-3); border-radius: 3px; overflow: hidden; }

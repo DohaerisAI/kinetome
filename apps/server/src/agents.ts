@@ -1,8 +1,9 @@
 import vm from 'node:vm';
 import {
-  designColors, GFX_REFERENCE, makeGfx, PLATFORMER_MOVES, rawBrief, validateProgram,
-  type AnimSpec, type CharacterDesign, type Gfx, type MoveDraft, type RenderOutput, type StyleBible,
+  designColors, GFX_REFERENCE, makeGfx, PLATFORMER_MOVES, rawBrief, RIG_REFERENCE, validateProgram,
+  type AnimSpec, type CharacterDesign, type Gfx, type MoveDraft, type PartSpec, type RenderOutput, type StyleBible,
 } from '@sprite/core';
+import type { RigContext } from './rig.ts';
 import { runClaude, type ClaudeResult, type Model } from './claude.ts';
 
 // ---------- shared context ----------
@@ -95,7 +96,36 @@ export function cellFor(d: CharacterDesign) {
   return { width: w, height: h, pivot: [Math.floor(w / 2), h - 3] as [number, number] };
 }
 
-function codeSystem(style: StyleBible, d: CharacterDesign): string {
+function rigSystem(style: StyleBible, d: CharacterDesign, rig: RigContext): string {
+  const colors = designColors(d);
+  return [
+    'You are a senior pixel-art animator. You animate an EXISTING, approved sprite (the reference, drawn by an artist) by writing a JavaScript cut-out rig: you slice the reference into parts and move those real pixels frame by frame. You never redraw the character from scratch. Reply only through the structured output; `code` must be the complete program.',
+    '',
+    'CONTRACT',
+    'Define exactly: const sprite = { width, height, pivot: [x, y], parts: { name: { poly: [[x,y],...], pivot: [x,y] } }, animations: { name: { frames, fps, loop } }, draw(g, anim, frame, t) { ... } };',
+    `Use width ${rig.width}, height ${rig.height}, pivot [${rig.pivot.join(', ')}]. Reference pixel (x, y) is at canvas (x + ${rig.pad}, y + ${rig.pad}); part polygons and pivots use REFERENCE coordinates; g.px/rect/etc use CANVAS coordinates.`,
+    'draw() is called once per frame on a blank transparent canvas; t = frame / frames (0 .. <1). Plain JavaScript only: no imports, no DOM, no timers, no Math.random (use g.rand()).',
+    '',
+    'DRAWING API (g)',
+    RIG_REFERENCE,
+    GFX_REFERENCE,
+    '',
+    'PALETTE (the reference is drawn in exactly these colors; use the names for any new pixels)',
+    Object.entries(colors).map(([k, v]) => `${k} = ${v}`).join('\n'),
+    '',
+    'CRAFT RULES',
+    '- Keep the reference\'s look: most pixels in every frame must come from g.part(). Split so that each moving piece is its own part: typically body/torso (usually stays), head (+ beard/hair), near arm, far arm, near leg/foot, far leg/foot, and loose cloth (scarf, cape, robe hem, sash ends) for follow-through.',
+    '- Parts can overlap in their polygons; draw back to front: far limbs, body, head, near limbs, loose cloth/effects.',
+    '- Motion: small, clean offsets read best in pixel art. Whole-pixel translations for bob and sway (1-3px); rotations only where a limb swings, around its joint pivot, and keep angles modest (up to ~25 degrees) because rotated pixel art gets jaggy.',
+    '- When a moving part uncovers a gap (e.g. the leg moved and exposes empty space under the robe), patch it with a few pixels in the right palette color, or draw a new simple limb segment with g.line/g.poly. Keep patches minimal and consistent frame to frame.',
+    '- Everything in the must-never-change list stays visible in every frame (it comes from the reference, so do not crop it out of the parts).',
+    '- Feet/contact points on the ground row in grounded frames; the loop closes seamlessly; body bob by whole pixels.',
+    '- Be concise: part table, a keyframe table per animation, one draw helper. Aim for under 200 lines. Do not call g.outline() (the reference already has its outline) unless you drew new silhouette pixels that need it.',
+  ].join('\n');
+}
+
+function codeSystem(style: StyleBible, d: CharacterDesign, rig?: RigContext | null): string {
+  if (rig) return rigSystem(style, d, rig);
   const colors = designColors(d);
   const cell = cellFor(d);
   return [
@@ -130,7 +160,25 @@ function animLines(anims: CodeAnim[]): string {
   ].join('\n')).join('\n');
 }
 
-export async function writeProgram(style: StyleBible, d: CharacterDesign, anims: CodeAnim[], model: Model, feedback?: string): Promise<ClaudeResult<{ code: string; notes: string }>> {
+export async function writeProgram(style: StyleBible, d: CharacterDesign, anims: CodeAnim[], model: Model, feedback?: string, rig?: RigContext | null): Promise<ClaudeResult<{ code: string; notes: string }>> {
+  if (rig) return runClaude({
+    task: 'code-write', model, timeoutMs: 900_000,
+    system: codeSystem(style, d, rig),
+    tools: ['Read'], dirs: [rig.imagePath.replace(/\/[^/]+$/, '')],
+    prompt: [
+      `Animate ${d.name}. First Read the reference image at ${rig.imagePath} (scaled up; light grid lines every 10 reference pixels) to understand the character, then use the exact pixel map below to cut parts.`,
+      `Character: ${d.description || rawBrief(d) || d.name}`,
+      d.invariants.length ? `Must stay visible in every frame: ${d.invariants.join('; ')}` : '',
+      '',
+      rig.pixelMap,
+      '',
+      'Animations to implement (exact names):',
+      animLines(anims),
+      feedback ? `\nUser notes: ${feedback}` : '',
+      '\nReturn the full program in `code`, and in `notes` list the parts you cut and how each animation moves them.',
+    ].filter(Boolean).join('\n'),
+    schema: codeSchema,
+  });
   return runClaude({
     task: 'code-write', model, timeoutMs: 600_000,
     system: codeSystem(style, d),
@@ -152,14 +200,18 @@ export async function writeProgram(style: StyleBible, d: CharacterDesign, anims:
 export async function reviseProgram(
   style: StyleBible, d: CharacterDesign, anims: CodeAnim[], model: Model,
   prev: { code: string; sheetPath?: string; error?: string; feedback?: string },
+  rig?: RigContext | null,
 ): Promise<ClaudeResult<{ code: string; notes: string }>> {
+  const dirs = [...new Set([prev.sheetPath, rig?.imagePath].filter((x): x is string => !!x).map(x => x.replace(/\/[^/]+$/, '')))];
   return runClaude({
-    task: 'code-revise', model, timeoutMs: 600_000,
-    system: codeSystem(style, d),
-    tools: prev.sheetPath ? ['Read'] : [],
-    dirs: prev.sheetPath ? [prev.sheetPath.replace(/\/[^/]+$/, '')] : [],
+    task: 'code-revise', model, timeoutMs: rig ? 900_000 : 600_000,
+    system: codeSystem(style, d, rig),
+    tools: dirs.length ? ['Read'] : [],
+    dirs,
     prompt: [
       `Character: ${d.description || rawBrief(d) || d.name}`,
+      rig ? `\n${rig.pixelMap}\n` : '',
+      rig && prev.sheetPath ? 'In the rendered sheet the FIRST row is the untouched reference for comparison; every animated frame must look like that character.' : '',
       'Animations (exact names):',
       animLines(anims),
       '',
@@ -202,6 +254,7 @@ const __mk = (frame, W, H) => {
     poly: (pts, c) => push(['poly', Array.from(pts || [], p => [n(p[0]), n(p[1])]), String(c)]),
     outline: c => push(['outline', c === undefined ? 'outline' : String(c)]),
     erase: (x, y, w, h) => push(['erase', n(x), n(y), n(w), n(h)]),
+    part: (name, dx, dy, angle, opts) => push(['part', String(name), dx === undefined ? 0 : n(dx), dy === undefined ? 0 : n(dy), angle === undefined ? 0 : n(angle), !!(opts && opts.flip)]),
     lerp: (a, b, t) => a + (b - a) * t,
     clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
     ease: t => t * t * (3 - 2 * t),
@@ -215,7 +268,11 @@ const __run = (only) => {
   if (typeof sprite === 'undefined' || !sprite || typeof sprite !== 'object') throw new Error('The code must define const sprite = { width, height, pivot, animations, draw }.');
   const s = sprite;
   if (typeof s.draw !== 'function') throw new Error('sprite.draw(g, anim, frame, t) must be a function');
-  const out = { width: s.width, height: s.height, pivot: Array.isArray(s.pivot) ? [+s.pivot[0], +s.pivot[1]] : null, animations: {}, ops: {} };
+  const out = { width: s.width, height: s.height, pivot: Array.isArray(s.pivot) ? [+s.pivot[0], +s.pivot[1]] : null, animations: {}, ops: {}, parts: undefined };
+  if (s.parts && typeof s.parts === 'object') {
+    out.parts = {};
+    for (const [k, v] of Object.entries(s.parts)) out.parts[k] = { poly: Array.from((v && v.poly) || [], q => [+q[0], +q[1]]), pivot: v && Array.isArray(v.pivot) ? [+v.pivot[0], +v.pivot[1]] : undefined };
+  }
   for (const [name, a] of Object.entries(s.animations || {})) {
     out.animations[name] = { frames: a && a.frames, fps: a && a.fps, loop: !(a && a.loop === false) };
     if (only && !only.includes(name)) continue;
@@ -237,7 +294,7 @@ type Op = [string, ...unknown[]];
  * Executes a sprite program in an isolated VM context with a hard time limit and replays
  * its recorded drawing commands onto real pixels in the host.
  */
-export function executeProgram(code: string, colors: Record<string, string>, only?: string[]): RenderOutput {
+export function executeProgram(code: string, colors: Record<string, string>, only?: string[], rig?: RigContext | null): RenderOutput {
   const context = vm.createContext({}, { codeGeneration: { strings: false, wasm: false } });
   let json: string;
   try {
@@ -246,7 +303,7 @@ export function executeProgram(code: string, colors: Record<string, string>, onl
     const msg = e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e);
     throw new Error(/Script execution timed out/.test(msg) ? 'The program took longer than 4s to render (infinite loop?)' : msg);
   }
-  const rec = JSON.parse(String(json)) as { width: number; height: number; pivot: [number, number] | null; animations: Record<string, AnimSpec>; ops: Record<string, Op[][]> };
+  const rec = JSON.parse(String(json)) as { width: number; height: number; pivot: [number, number] | null; animations: Record<string, AnimSpec>; ops: Record<string, Op[][]>; parts?: Record<string, PartSpec> };
   const spec = validateProgram({ ...rec, pivot: rec.pivot ?? undefined, draw: () => {} });
   const animations = Object.entries(spec.animations)
     .filter(([name]) => !only || only.includes(name))
@@ -254,7 +311,7 @@ export function executeProgram(code: string, colors: Record<string, string>, onl
       name, fps: a.fps, loop: a.loop !== false,
       frames: (rec.ops[name] ?? []).map((ops, f) => {
         const img = { width: spec.width, height: spec.height, data: new Uint8ClampedArray(spec.width * spec.height * 4) };
-        const g = makeGfx(img, colors);
+        const g = makeGfx(img, colors, 1, rig && spec.parts ? { ref: rig.ref, pad: rig.pad, parts: spec.parts } : undefined);
         try { for (const op of ops) replay(g, op); }
         catch (e) { throw new Error(`draw("${name}", frame ${f}) failed: ${e instanceof Error ? e.message : String(e)}`); }
         return img;
@@ -273,5 +330,6 @@ function replay(g: Gfx, op: Op): void {
     case 'poly': g.poly(a[0], a[1]); break;
     case 'outline': g.outline(a[0]); break;
     case 'erase': g.erase(a[0], a[1], a[2], a[3]); break;
+    case 'part': g.part(a[0], a[1], a[2], a[3], { flip: a[4] }); break;
   }
 }

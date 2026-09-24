@@ -178,7 +178,7 @@ test('design palette names every part in three shades plus outline', async () =>
     id: 'kai', name: 'Kai', lore: 'exiled blade dancer', personality: 'calm', build: 'lean', outfit: 'long coat', details: 'scar over left eye',
     parts: [{ name: 'Main cloth', color: '#3d5aa8' }, { name: 'Skin', color: '#e8b796' }], outline: '#1a1420', pixelHeight: 40,
     description: 'a lean blade dancer in a long blue coat', referencePose: 'idle', assetId: null, moves: [], code: null, createdAt: '', updatedAt: '',
-    invariants: ['Left leg is a wooden peg from the knee down'],
+    invariants: ['Left leg is a wooden peg from the knee down'], codeRig: false,
   };
   const c = designColors(design);
   assert.deepEqual(Object.keys(c).sort(), ['main-cloth', 'main-cloth.light', 'main-cloth.shadow', 'outline', 'skin', 'skin.light', 'skin.shadow']);
@@ -213,4 +213,24 @@ test('sprite program renders frames with palette names only', async () => {
   const bad = validateProgram(new Function(code.replace("'body'", "'#ff0000'"))());
   assert.throws(() => renderProgram(bad, { body: '#ff0000', outline: '#000000' }), /Unknown color "#ff0000"/);
   assert.throws(() => validateProgram({ width: 4 }), /integer 8\.\.256/);
+});
+
+test('rig parts: cut from the reference, moved, rotated, flipped', async () => {
+  const { makeGfx } = await import('./index.ts');
+  const ref = blank(10, 10);
+  fill(ref, 2, 2, 2, 6, RED);                 // a vertical "leg" 2x6 at (2,2)
+  const rig = { ref, pad: 3, parts: { leg: { poly: [[1, 1], [5, 1], [5, 9], [1, 9]] as [number, number][], pivot: [3, 2] as [number, number] } } };
+  const at = (img: ReturnType<typeof blank>, x: number, y: number) => img.data[(y * img.width + x) * 4 + 3];
+  const a = blank(16, 16);
+  makeGfx(a, {}, 1, rig).part('leg');
+  assert.equal(at(a, 5, 5), 255, 'drawn in place (+pad)');
+  assert.equal(at(a, 5, 11), 0);
+  const b = blank(16, 16);
+  makeGfx(b, {}, 1, rig).part('leg', 4, 0);
+  assert.equal(at(b, 9, 5), 255, 'moved right by 4');
+  const c = blank(16, 16);
+  makeGfx(c, {}, 1, rig).part('leg', 0, 0, 90);
+  // rotated 90deg clockwise around the hip (3,2)+pad: the leg now points left
+  assert.equal(at(c, 3, 5), 255, JSON.stringify([...Array(16)].map((_, y) => [...Array(16)].map((_, x) => at(c, x, y) ? '#' : '.').join('')).join('/')));
+  assert.equal(at(c, 5, 9), 0);
 });

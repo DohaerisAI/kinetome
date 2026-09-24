@@ -3,7 +3,8 @@ import { PLATFORMER_MOVES, type PixelImage } from '@sprite/core';
 import { api, type CodeEvent, type Packed, type Usage } from '../../api.ts';
 import { Icon } from '../../icons.tsx';
 import { mergeIntoAsset } from '../../merge.ts';
-import { dataUrlToBlob, loadImage, unpackFrames } from '../../pixels.ts';
+import { dataUrlToBlob, loadImage, unpackFrames, useImage } from '../../pixels.ts';
+import { FrameThumb } from '../FrameThumb.tsx';
 import { AnimPreview } from '../AnimPreview.tsx';
 import { ClaudeButton, Field, usageText, type TabProps } from './shared.tsx';
 
@@ -27,6 +28,9 @@ function useUnpacked(packed: Packed | null) {
 }
 
 export function CodeTab({ projectId, design: d, assets, model, update, notify, fail, onAssetsChanged }: TabProps) {
+  const linkedAsset = d.assetId ? assets.find(a => a.id === d.assetId) : undefined;
+  const [useRef_, setUseRef] = useState<boolean>(d.code ? d.codeRig : !!linkedAsset);
+  const refImg = useImage(linkedAsset ? api.sheetUrl(projectId, linkedAsset) : null);
   const choices = useMemo(() => {
     const ids = d.moves.map(m => m.id);
     return ids.includes('idle') ? ids : ['idle', ...ids];
@@ -68,7 +72,7 @@ export function CodeTab({ projectId, design: d, assets, model, update, notify, f
     const ctl = new AbortController();
     abort.current = ctl;
     try {
-      await api.runCode(projectId, d.id, { model, animations: picked, rounds, feedback: feedback.trim() || undefined, fromCurrent }, (e: CodeEvent) => {
+      await api.runCode(projectId, d.id, { model, animations: picked, rounds, feedback: feedback.trim() || undefined, fromCurrent, useReference: useRef_ && !!linkedAsset }, (e: CodeEvent) => {
         if (e.type === 'status') { setStatus(e.message); setProgress({ i: e.iteration, total: e.total }); }
         else if (e.type === 'iteration') {
           setIters(list => [...list, e]);
@@ -129,8 +133,18 @@ export function CodeTab({ projectId, design: d, assets, model, update, notify, f
   return (
     <div className="tab-grid code-tab">
       <section className="card">
-        <h3>Claude draws {d.name} with code</h3>
-        <p className="dim small">Claude writes a small drawing program using only {d.name}'s palette, the studio renders it, then Claude looks at the frames and fixes what's off. Pixel-perfect consistency; best for simpler characters, enemies and effects.</p>
+        <h3>Claude animates {d.name} with code</h3>
+        {linkedAsset && (
+          <label className={useRef_ ? 'ref-mode on' : 'ref-mode'}>
+            <input type="checkbox" checked={useRef_} onChange={e => setUseRef(e.target.checked)} disabled={running} />
+            <FrameThumb img={refImg} rect={linkedAsset.frames[linkedAsset.animations.find(a => a.name === 'idle')?.frames[0] ?? 0]} size={56} className="thumb" />
+            <span>
+              <strong>Animate the reference sprite</strong> <span className="badge ok">recommended</span><br />
+              <span className="dim small">Claude cuts {d.name}'s reference into parts (head, limbs, cloth) and moves those real pixels, so every frame keeps the reference's art and details. Off = Claude redraws the character from scratch (cruder).</span>
+            </span>
+          </label>
+        )}
+        {!linkedAsset && <p className="dim small">Claude writes a drawing program using only {d.name}'s palette, the studio renders it, then Claude fixes what looks off. Import a reference sprite first (Reference tab) to animate your real art instead.</p>}
         <Field label="Animations">
           <div className="chips">
             {choices.map(id => (
@@ -148,7 +162,8 @@ export function CodeTab({ projectId, design: d, assets, model, update, notify, f
           </Field>
           <Field label="Estimated cost" hint="measured on real runs">
             <span className="dim small">{(() => {
-              // measured: writing 10 frames = 26k output tokens / 4.2 min; each review round ~75% of that
+              // measured: writing 10 frames = 26k output tokens / 4.2 min; each review round ~75% of that.
+              // Rig mode reads a ~5k-token pixel map, but writes less drawing code.
               const write = 12 + 1.4 * estimate, total = write * (1 + 0.75 * rounds);
               return `~${Math.round(total)}k output tokens · ~${Math.max(1, Math.round(total * 0.175))} min · ${picked.length} anim, ${estimate} frames`;
             })()}</span>

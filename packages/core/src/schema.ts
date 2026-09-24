@@ -137,6 +137,8 @@ export const CharacterDesign = z.object({
   moves: z.array(MoveDraft).default([]),
   /** Latest sprite program (code-drawn route) and the animations it renders. */
   code: z.string().nullable().default(null),
+  /** The program animates the reference sprite's own pixels (cut-out rig) instead of drawing from scratch. */
+  codeRig: z.boolean().default(false),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

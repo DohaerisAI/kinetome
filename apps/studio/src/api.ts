@@ -63,7 +63,7 @@ export const api = {
   renderCode: (p: string, id: string, code: string) =>
     call<{ ok: true; packed: Packed; preview: string } | { ok: false; error: string }>(`/projects/${p}/characters/${id}/code/render`, json({ code })),
   /** Streams the write -> render -> review loop. Resolves when the stream ends. */
-  async runCode(p: string, id: string, body: { model: Model; animations: string[]; rounds: number; feedback?: string; fromCurrent?: boolean }, onEvent: (e: CodeEvent) => void, signal?: AbortSignal) {
+  async runCode(p: string, id: string, body: { model: Model; animations: string[]; rounds: number; feedback?: string; fromCurrent?: boolean; useReference?: boolean }, onEvent: (e: CodeEvent) => void, signal?: AbortSignal) {
     const res = await fetch(`/api/projects/${p}/characters/${id}/code/run`, { ...json(body), signal });
     if (!res.ok || !res.body) {
       const err = await res.json().catch(() => ({}));
