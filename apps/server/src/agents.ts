@@ -103,7 +103,7 @@ function rigSystem(style: StyleBible, d: CharacterDesign, rig: RigContext): stri
     '',
     'CONTRACT',
     'Define exactly: const sprite = { width, height, pivot: [x, y], parts: { name: { poly: [[x,y],...], pivot: [x,y] } }, animations: { name: { frames, fps, loop } }, draw(g, anim, frame, t) { ... } };',
-    `Use width ${rig.width}, height ${rig.height}, pivot [${rig.pivot.join(', ')}]. Reference pixel (x, y) is at canvas (x + ${rig.pad}, y + ${rig.pad}); part polygons and pivots use REFERENCE coordinates; g.px/rect/etc use CANVAS coordinates.`,
+    `Use height ${rig.height} and pivot [${rig.pivot.join(', ')}]. Width is at least ${rig.width}; you may widen it up to 256 to make room on the RIGHT for effects (the character stays where it is). Reference pixel (x, y) is at canvas (x + ${rig.pad}, y + ${rig.pad}); part polygons and pivots use REFERENCE coordinates; g.px/rect/etc use CANVAS coordinates.`,
     'draw() is called once per frame on a blank transparent canvas; t = frame / frames (0 .. <1). Plain JavaScript only: no imports, no DOM, no timers, no Math.random (use g.rand()).',
     '',
     'DRAWING API (g)',
@@ -199,7 +199,7 @@ export async function writeProgram(style: StyleBible, d: CharacterDesign, anims:
 
 export async function reviseProgram(
   style: StyleBible, d: CharacterDesign, anims: CodeAnim[], model: Model,
-  prev: { code: string; sheetPath?: string; error?: string; feedback?: string },
+  prev: { code: string; sheetPath?: string; sheetAnims?: CodeAnim[]; error?: string; feedback?: string },
   rig?: RigContext | null,
 ): Promise<ClaudeResult<{ code: string; notes: string }>> {
   const dirs = [...new Set([prev.sheetPath, rig?.imagePath].filter((x): x is string => !!x).map(x => x.replace(/\/[^/]+$/, '')))];
@@ -211,14 +211,14 @@ export async function reviseProgram(
     prompt: [
       `Character: ${d.description || rawBrief(d) || d.name}`,
       rig ? `\n${rig.pixelMap}\n` : '',
-      rig && prev.sheetPath ? 'In the rendered sheet the FIRST row is the untouched reference for comparison; every animated frame must look like that character.' : '',
+      rig && prev.sheetPath ? 'In the rendered sheet the FIRST cell (greenish background) is the untouched reference for comparison; every animated frame must look like that character.' : '',
       'Animations (exact names):',
       animLines(anims),
       '',
       'Current program:',
       '```js', prev.code, '```',
       prev.error ? `\nIt FAILED to run: ${prev.error}\nFix the error first.` : '',
-      prev.sheetPath ? `\nRead the rendered frames at ${prev.sheetPath} before answering. Layout: one row per animation in this order: ${anims.map(a => `${a.name} (${a.frames} frames)`).join(', ')}; frames left to right, scaled up, the lighter horizontal line is the ground row.` : '',
+      prev.sheetPath ? `\nRead the rendered frames at ${prev.sheetPath} before answering. Layout: ${prev.sheetAnims?.length ? prev.sheetAnims.map(a => `${a.name} (${a.frames} frames)`).join(', ') : anims.map(a => `${a.name} (${a.frames} frames)`).join(', ')}; each animation starts on a new row and its frames run left to right in reading order, wrapping onto the next rows; scaled up; the lighter horizontal line is the ground row.` : '',
       prev.sheetPath ? 'Critique it like a lead pixel artist: anatomy and proportions, silhouette readability, the character looking identical across frames, smooth and weighty motion, feet on the ground line, correct colors per part, stray pixels. Then fix the biggest problems.' : '',
       prev.feedback ? `\nUser feedback (highest priority): ${prev.feedback}` : '',
       '\nReturn the complete improved program in `code`, and in `notes` list what you changed (short).',

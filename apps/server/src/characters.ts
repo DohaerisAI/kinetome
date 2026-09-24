@@ -115,11 +115,13 @@ characters.post('/projects/:p/characters/:c/code/render', async c => {
  */
 characters.post('/projects/:p/characters/:c/code/run', async c => {
   const p = c.req.param('p'), id = c.req.param('c');
-  const body = await c.req.json<{ model?: string; animations?: string[]; rounds?: number; feedback?: string; fromCurrent?: boolean; useReference?: boolean }>();
+  const body = await c.req.json<{ model?: string; animations?: string[]; rounds?: number; feedback?: string; fromCurrent?: boolean; useReference?: boolean; focus?: string[] }>();
   const model = modelOf(body.model);
   const rounds = Math.max(0, Math.min(3, body.rounds ?? 1));
   const [{ style }, design] = await Promise.all([store.getProject(p), store.getCharacter(p, id)]);
   const anims = codeAnims(design, body.animations ?? []);
+  // the review sheet shows only the animations being worked on, so they render large enough to judge
+  const focus = body.focus?.length ? anims.filter(a => body.focus!.includes(a.name)) : anims;
   const colors = designColors(design);
   const renders = join(store.projectPath(p), '.renders', id);
   await mkdir(renders, { recursive: true });
@@ -146,7 +148,7 @@ characters.post('/projects/:p/characters/:c/code/run', async c => {
         if (code) {
           // render the current program so Claude can see it
           try {
-            const out = executeProgram(code, colors, anims.map(a => a.name), rig);
+            const out = executeProgram(code, colors, focus.map(a => a.name), rig);
             sheetPath = join(renders, `iter-${Date.now()}.png`);
             await writeFile(sheetPath, encodePng(contactSheet(out, 1500, refRow)));
           } catch (e) { error = e instanceof Error ? e.message : String(e); }
@@ -159,7 +161,7 @@ characters.post('/projects/:p/characters/:c/code/run', async c => {
         });
         const r = needsWrite
           ? await writeProgram(style, design, anims, model, feedback, rig)
-          : await reviseProgram(style, design, anims, model, { code: code!, sheetPath, error, feedback }, rig);
+          : await reviseProgram(style, design, anims, model, { code: code!, sheetPath, sheetAnims: focus, error, feedback }, rig);
         await logUsage(store.projectPath(p), needsWrite ? 'code-write' : 'code-revise', r);
         usage = sum(usage, r.usage);
         code = r.data.code;

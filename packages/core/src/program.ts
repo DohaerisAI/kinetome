@@ -294,16 +294,24 @@ export function renderProgram(p: SpriteProgram, colors: Record<string, string>, 
 }
 
 /**
- * All frames on one image for Claude to look at: one row per animation, frames scaled up
- * with a visible cell background and a ground line at the pivot.
+ * All frames on one image for Claude to look at: each animation starts a new row block and
+ * wraps its frames left to right, with a visible cell background and a ground line at the
+ * pivot. Columns and scale are chosen so the sheet fits `max`x`max` at the largest scale
+ * (vision models downscale anything bigger, which hides pixel detail).
  */
-export function contactSheet(out: RenderOutput, maxWidth = 1500, reference?: PixelImage): PixelImage {
+export function contactSheet(out: RenderOutput, max = 1500, reference?: PixelImage): PixelImage {
   if (reference) out = { ...out, animations: [{ name: 'reference', fps: 1, loop: false, frames: [reference] }, ...out.animations] };
-  const cols = Math.max(...out.animations.map(a => a.frames.length));
-  const gap = 6;
-  const scale = Math.max(1, Math.min(8, Math.floor((maxWidth - gap * (cols + 1)) / (cols * out.width))));
+  const gap = 6, longest = Math.max(...out.animations.map(a => a.frames.length));
+  let best = { cols: 1, scale: 1 };
+  for (let cols = 1; cols <= longest; cols++) {
+    const rows = out.animations.reduce((n, a) => n + Math.ceil(a.frames.length / cols), 0);
+    const scale = Math.min(8, Math.floor((max - gap * (cols + 1)) / (cols * out.width)), Math.floor((max - gap * (rows + 1)) / (rows * out.height)));
+    if (scale >= 1 && (scale > best.scale || (scale === best.scale && cols > best.cols))) best = { cols, scale };
+  }
+  const { cols, scale } = best;
   const cw = out.width * scale, ch = out.height * scale;
-  const W = gap + cols * (cw + gap), H = gap + out.animations.length * (ch + gap);
+  const rows = out.animations.reduce((n, a) => n + Math.ceil(a.frames.length / cols), 0);
+  const W = gap + cols * (cw + gap), H = gap + rows * (ch + gap);
   const img: PixelImage = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4) };
   const fill = (x: number, y: number, w: number, h: number, c: [number, number, number]) => {
     for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) {
@@ -312,15 +320,19 @@ export function contactSheet(out: RenderOutput, maxWidth = 1500, reference?: Pix
     }
   };
   fill(0, 0, W, H, [34, 34, 44]);
-  out.animations.forEach((a, row) => a.frames.forEach((f, col) => {
-    const ox = gap + col * (cw + gap), oy = gap + row * (ch + gap);
-    fill(ox, oy, cw, ch, [70, 70, 88]);
-    fill(ox, oy + (out.pivot.y + 1) * scale, cw, 1, [120, 120, 150]); // ground line
-    for (let y = 0; y < f.height; y++) for (let x = 0; x < f.width; x++) {
-      const s = (y * f.width + x) * 4;
-      if (f.data[s + 3] === 0) continue;
-      fill(ox + x * scale, oy + y * scale, scale, scale, [f.data[s], f.data[s + 1], f.data[s + 2]]);
-    }
-  }));
+  let row = 0;
+  for (const a of out.animations) {
+    a.frames.forEach((f, k) => {
+      const ox = gap + (k % cols) * (cw + gap), oy = gap + (row + Math.floor(k / cols)) * (ch + gap);
+      fill(ox, oy, cw, ch, a.name === 'reference' ? [60, 80, 70] : [70, 70, 88]);
+      fill(ox, oy + (out.pivot.y + 1) * scale, cw, 1, [120, 120, 150]); // ground line
+      for (let y = 0; y < f.height; y++) for (let x = 0; x < f.width; x++) {
+        const s = (y * f.width + x) * 4;
+        if (f.data[s + 3] === 0) continue;
+        fill(ox + x * scale, oy + y * scale, scale, scale, [f.data[s], f.data[s + 1], f.data[s + 2]]);
+      }
+    });
+    row += Math.ceil(a.frames.length / cols);
+  }
   return img;
 }
