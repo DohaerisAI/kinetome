@@ -198,9 +198,9 @@ apps/
 
 Each phase ships something usable on its own.
 
-### Phase 1: Ingest anything (≈2 weeks)
-- Pixelize pipeline: any PNG/JPG/WebP, clipboard paste, drag from browser → bg removal → auto-crop → downscale to unit height → palette/ramp snap (optional ordered dithering) → outline normalize → orphan cleanup.
-- Animated input: GIF/APNG/WebP/MP4 decode, loop finder, stabilizer, frame picker, **batch-shared** crop and palette.
+### Phase 1: Ingest anything (≈2 weeks), mostly done
+- ✅ Pixelize pipeline: PNG/JPG/WebP → bg removal (flood + defringe) → shared crop/anchor → fake-pixel grid detection or downscale to unit height → shared palette (auto / Style Bible) → orphan cleanup → outline. Remaining: clipboard paste, drag from browser, ML background removal for photos, ordered dithering, ramp-aware snapping.
+- ✅ Animated input: GIF/APNG/WebP (ImageDecoder), MP4/WebM (video element), frame sequences; loop finder on cleaned frames; feet anchoring (stabilizer); even frame picker; batch-shared everything. ✅ Idle motions for stills (breathe, hover, squash, hurt flash/shake).
 - Restyle for imported packs.
 - Pixel editor basics: pencil/eraser/picker restricted to the palette, per-frame undo, onion skin (edits land as a new asset version).
 - **Done when:** a random GIF of a character from the internet becomes an on-style, looping, correctly pivoted sprite in under a minute.

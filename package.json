@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -k -n server,studio -c magenta,cyan \"npm run dev -w @sprite/server\" \"npm run dev -w @sprite/studio\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm test -w @sprite/core"
+    "test": "npm test -w @sprite/core -w @sprite/pixel"
   },
   "devDependencies": { "concurrently": "^9.2.0" }
 }

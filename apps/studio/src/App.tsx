@@ -5,6 +5,8 @@ import { AssetList } from './components/AssetList.tsx';
 import { Viewer } from './components/Viewer.tsx';
 import { Inspector } from './components/Inspector.tsx';
 import { ImportDialog } from './components/ImportDialog.tsx';
+import { PixelizeDialog } from './components/PixelizeDialog.tsx';
+import { isVideo } from './decode.ts';
 import { LineupView } from './components/LineupView.tsx';
 import { StyleView } from './components/StyleView.tsx';
 import { useImage } from './pixels.ts';
@@ -30,6 +32,7 @@ export function App() {
   const [animName, setAnimName] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('library');
   const [importFiles, setImportFiles] = useState<File[] | null>(null);
+  const [pixelizeFiles, setPixelizeFiles] = useState<File[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -70,15 +73,16 @@ export function App() {
     try { replaceAsset(await api.updateAsset(pid, a, png)); } catch (e) { fail(e); }
   };
 
-  const importAsset = async (draft: AssetDraft, png: Blob) => {
-    if (!pid) return;
+  const importAsset = async (draft: AssetDraft, png: Blob): Promise<boolean> => {
+    if (!pid) return false;
     try {
       const created = await api.createAsset(pid, draft, png);
       setAssets(list => [...list, created]);
       setSelectedId(created.id);
       setImportFiles(null);
       setTab('library');
-    } catch (e) { fail(e); }
+      return true;
+    } catch (e) { fail(e); return false; }
   };
 
   const removeAsset = async (id: string) => {
@@ -109,11 +113,28 @@ export function App() {
     } catch (e) { fail(e); }
   };
 
+  /**
+   * PNG (+JSON) sprite sheets go to the sheet importer; photos, illustrations, GIFs,
+   * videos and frame sequences go to the pixelizer.
+   */
+  const routeFiles = (all: File[]) => {
+    const files = all.filter(f => /\.(png|json|jpe?g|gif|webp|bmp|avif|mp4|webm|mov|m4v)$/i.test(f.name) || isVideo(f));
+    if (!files.length) return;
+    const hasJson = files.some(f => /\.json$/i.test(f.name));
+    const pngs = files.filter(f => /\.png$/i.test(f.name));
+    const sheetLike = hasJson || (pngs.length === 1 && files.length === 1);
+    if (sheetLike) setImportFiles(files);
+    else setPixelizeFiles(files.filter(f => !/\.json$/i.test(f.name)));
+  };
+
+  const importPixelized = async (draft: AssetDraft, png: Blob) => {
+    if (await importAsset(draft, png)) setPixelizeFiles(null);
+  };
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    const files = [...e.dataTransfer.files].filter(f => /\.(png|json)$/i.test(f.name));
-    if (files.length) setImportFiles(files);
+    routeFiles([...e.dataTransfer.files]);
   };
 
   return (
@@ -139,10 +160,10 @@ export function App() {
         <div className="spacer" />
         {pid && <a className="button" href={api.godotZipUrl(pid)} title="Every asset as SpriteFrames + scenes, laid out relative to the Godot project root">Export all → Godot</a>}
         {project?.godot.path && <button onClick={() => syncGodot()} title={project.godot.path}>Sync all to Godot</button>}
-        <button className="primary" onClick={() => fileInput.current?.click()} disabled={!pid}>Import sprite…</button>
+        <button className="primary" onClick={() => fileInput.current?.click()} disabled={!pid} title="Sprite sheets, images, GIFs, videos">Import…</button>
         <input
-          ref={fileInput} type="file" multiple accept=".png,.json" hidden
-          onChange={e => { const f = [...(e.target.files ?? [])]; if (f.length) setImportFiles(f); e.target.value = ''; }}
+          ref={fileInput} type="file" multiple accept=".png,.json,.jpg,.jpeg,.gif,.webp,.bmp,.avif,image/*,video/*" hidden
+          onChange={e => { routeFiles([...(e.target.files ?? [])]); e.target.value = ''; }}
         />
       </header>
 
@@ -172,9 +193,13 @@ export function App() {
       {!pid && <div className="empty">No project yet. <button className="primary" onClick={newProject}>Create one</button></div>}
 
       {importFiles && style && (
-        <ImportDialog files={importFiles} style={style} onCancel={() => setImportFiles(null)} onImport={importAsset} onError={fail} />
+        <ImportDialog files={importFiles} style={style} onCancel={() => setImportFiles(null)} onImport={importAsset} onError={fail}
+          onPixelize={() => { setPixelizeFiles(importFiles.filter(f => !/\.json$/i.test(f.name))); setImportFiles(null); }} />
       )}
-      {dragging && <div className="dropveil">Drop PNG (+ optional JSON) to import</div>}
+      {pixelizeFiles && style && (
+        <PixelizeDialog files={pixelizeFiles} style={style} onCancel={() => setPixelizeFiles(null)} onImport={importPixelized} onError={fail} />
+      )}
+      {dragging && <div className="dropveil">Drop sprite sheets, images, GIFs or videos</div>}
     </div>
   );
 }

@@ -9,6 +9,22 @@ npm test           # core tests
 npm run typecheck
 ```
 
+## Pixelize: images, GIFs, video → animated pixel sprites
+
+Drop any of these on the studio (or use **Import…**):
+
+| Input | What happens |
+|---|---|
+| JPG / PNG / WebP illustration | Background removed, downscaled to your unit height, shared palette, cleanup, optional outline. Then pick an idle motion (breathe, hover, squash) or a hurt effect |
+| "Fake" pixel art (AI output, upscaled screenshots) | The hidden pixel grid is detected (non-integer scales, blur and JPEG noise are handled) and the true pixels are rebuilt |
+| Animated GIF / WebP / APNG | All frames decoded; background, crop, anchor and palette are decided once for **all** frames, so nothing jitters or flickers |
+| MP4 / WebM / MOV | Sampled at 12 fps; **Find loop** suggests seamless cycles |
+| Several numbered PNGs | Treated as a frame sequence |
+
+Frames are anchored on the feet by default, which turns a character walking across a clip into a walk-in-place cycle. Everything runs in the browser in a worker; no uploads, no AI calls, no tokens.
+For full moves (walk, attack) from a single still: turn it into a short clip with any image-to-video tool, then drop the clip here.
+Try it with `samples/pixelize/`.
+
 ## Using sprites in Godot 4
 
 1. In the studio, pick an asset and click **Download .zip** (or **Export all → Godot** in the top bar).
@@ -22,6 +38,7 @@ If the studio runs on the same machine as the Godot project, set the project fol
 
 ## Layout
 
+- `packages/pixel`: the pixelize pipeline (background removal, grid detection, downscale, shared palette, anchoring, cleanup, outline, loop finder, idle motions).
 - `packages/core`: canonical sprite format (zod), importers (Aseprite, TexturePacker/Phaser, row-based, native), slicing (grid, auto-detect islands), palette tools (Oklab snap, alpha harden, mode-pool downscale), and the style linter.
 - `apps/server`: Hono API. Projects are plain folders under `workspace/` (`project.json`, `style.json`, `assets/<id>/asset.json + sheet.png`).
 - `apps/studio`: React UI. Library (viewer, timeline, onion skin, inspector, style check + fixes), Lineup (whole cast on one baseline), Style Bible editor.

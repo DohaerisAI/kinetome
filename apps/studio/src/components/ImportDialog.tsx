@@ -12,11 +12,12 @@ interface Props {
   files: File[];
   style: StyleBible;
   onCancel: () => void;
-  onImport: (draft: AssetDraft, png: Blob) => Promise<void>;
+  onImport: (draft: AssetDraft, png: Blob) => Promise<unknown>;
   onError: (e: unknown) => void;
+  onPixelize: () => void;
 }
 
-export function ImportDialog({ files, style, onCancel, onImport, onError }: Props) {
+export function ImportDialog({ files, style, onCancel, onImport, onError, onPixelize }: Props) {
   const pngFile = files.find(f => /\.png$/i.test(f.name));
   const jsonFile = files.find(f => /\.json$/i.test(f.name));
   const [img, setImg] = useState<HTMLImageElement | null>(null);
@@ -190,6 +191,7 @@ export function ImportDialog({ files, style, onCancel, onImport, onError }: Prop
           </div>
         )}
         <div className="modal-foot">
+          <button className="ghost" onClick={onPixelize} title="Treat this PNG as an illustration or fake pixel art and convert it" style={{ marginRight: 'auto' }}>Not a sprite sheet? Pixelize it →</button>
           <button onClick={onCancel}>Cancel</button>
           <button className="primary" disabled={!result.sheet || busy} onClick={doImport}>{busy ? 'Importing…' : 'Import'}</button>
         </div>
