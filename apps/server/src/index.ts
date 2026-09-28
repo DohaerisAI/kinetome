@@ -108,7 +108,8 @@ app.get('/projects/:p/assets/:a/versions/:v/sheet.png', async c => {
 });
 app.post('/projects/:p/assets/:a/versions/:v/restore', async c => c.json(await store.restoreVersion(c.req.param('p'), c.req.param('a'), c.req.param('v'))));
 
-app.get('/projects/:p/assets/:a/edit', async c => c.json(await store.getEditMeta(c.req.param('p'), c.req.param('a'))));
+// null when the sprite has no layered doc yet (a normal case, not an error)
+app.get('/projects/:p/assets/:a/edit', async c => c.json(await store.getEditMeta(c.req.param('p'), c.req.param('a')).catch(e => { if (e instanceof store.HttpError && e.status === 404) return null; throw e; })));
 app.get('/projects/:p/assets/:a/edit.png', async c => {
   const buf = await readFile(store.editPngPath(c.req.param('p'), c.req.param('a'))).catch(() => null);
   if (!buf) throw new store.HttpError(404, 'not found');

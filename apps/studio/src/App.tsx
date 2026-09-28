@@ -17,6 +17,7 @@ import { StyleView } from './components/StyleView.tsx';
 import { useImage } from './pixels.ts';
 import { Home } from './components/Home.tsx';
 import { Playtest } from './components/Playtest.tsx';
+import { TilesView } from './components/TilesView.tsx';
 import { CommandPalette, type Command } from './components/CommandPalette.tsx';
 import { Orb } from './components/Orb.tsx';
 import { useClaudeActivity } from './claudeActivity.ts';
@@ -26,13 +27,14 @@ import { ExportDialog } from './components/ExportDialog.tsx';
 import { CheckPanel, LightingPanel, VariantsPanel } from './components/SpritePanels.tsx';
 import { pop, slideTo, viewIn } from './motion.ts';
 
-type Tab = 'home' | 'library' | 'editor' | 'characters' | 'playtest' | 'lineup' | 'style';
+type Tab = 'home' | 'library' | 'editor' | 'characters' | 'playtest' | 'tiles' | 'lineup' | 'style';
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: 'home', label: 'Home', icon: 'home' },
   { id: 'library', label: 'Library', icon: 'layers' },
   { id: 'editor', label: 'Editor', icon: 'pencil' },
   { id: 'characters', label: 'Characters', icon: 'users' },
   { id: 'playtest', label: 'Playtest', icon: 'gamepad' },
+  { id: 'tiles', label: 'Tiles', icon: 'tiles' },
   { id: 'lineup', label: 'Lineup', icon: 'grid' },
   { id: 'style', label: 'Style Bible', icon: 'palette' },
 ];
@@ -382,7 +384,7 @@ export function App() {
         <nav className="tabs" role="tablist" ref={navRef}>
           <span className="tab-indicator" ref={indicator} aria-hidden />
           {TABS.map(t => (
-            <button key={t.id} data-tab={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'tab active' : 'tab'} onClick={() => setTab(t.id)}>
+            <button key={t.id} data-tab={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'tab active' : 'tab'} onClick={() => setTab(t.id)} title={t.label} aria-label={t.label}>
               <Icon name={t.icon} /> <span>{t.label}</span>
             </button>
           ))}
@@ -444,6 +446,10 @@ export function App() {
         </main>
       )}
       {ready && pid && style && tab === 'playtest' && <Playtest projectId={pid} assets={assets} style={style} designs={designs} active={tab === 'playtest'} />}
+      {ready && pid && style && tab === 'tiles' && (
+        <TilesView projectId={pid} assets={assets} style={style} fail={fail} notify={notify} onEdit={editAsset}
+          onCreated={a => setAssets(list => [...list, a])} />
+      )}
       {ready && pid && style && tab === 'lineup' && (
         <LineupView projectId={pid} assets={assets} style={style} paletteFor={paletteFor}
           onOpen={id => { setSelectedId(id); setTab('library'); }} />
