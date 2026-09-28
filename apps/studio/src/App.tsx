@@ -21,6 +21,7 @@ import { TilesView } from './components/TilesView.tsx';
 import { CommandPalette, type Command } from './components/CommandPalette.tsx';
 import { Orb } from './components/Orb.tsx';
 import { useClaudeActivity } from './claudeActivity.ts';
+import { watchQueue } from './queue.ts';
 import { ProjectMenu } from './components/ProjectMenu.tsx';
 import { TrashDialog } from './components/TrashDialog.tsx';
 import { ExportDialog } from './components/ExportDialog.tsx';
@@ -141,6 +142,16 @@ export function App() {
     window.addEventListener('keydown', k, true);
     return () => window.removeEventListener('keydown', k, true);
   }, []);
+
+  // the background moveset queue: announce each finished move, here and as a system notification
+  useEffect(() => {
+    watchQueue(pid, j => {
+      const msg = j.status === 'done' ? `${j.move} animated (${j.character})` : `${j.move} failed: ${j.error ?? 'error'}`;
+      notify(msg);
+      if (pid) api.listCharacters(pid).then(setDesigns, () => {});
+      try { if (document.hidden && Notification.permission === 'granted') new Notification('Kinetome', { body: msg, icon: '/favicon.svg' }); } catch { /* notifications unavailable */ }
+    });
+  }, [pid, notify]);
 
   useEffect(() => { api.claudeStatus().then(setClaude, () => setClaude({ available: false, version: null })); }, []);
   useEffect(() => { try { localStorage.setItem(MODEL_KEY, model); } catch { /* storage unavailable */ } }, [model]);

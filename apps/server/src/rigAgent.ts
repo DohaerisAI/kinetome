@@ -178,11 +178,10 @@ rigApi.post('/projects/:p/characters/:c/rig/suggest', async c => {
   return c.json({ design: saved, notes: r.data.notes, usage: r.usage });
 });
 
-rigApi.post('/projects/:p/characters/:c/rig/animate', async c => {
-  const p = c.req.param('p');
-  const body = await c.req.json<{ move: string; model?: Model; rounds?: number; feedback?: string }>();
+/** Keys one move (optionally reviewing its own render) and saves the clip on the design. */
+export async function animateMove(p: string, characterId: string, body: { move: string; model?: Model; rounds?: number; feedback?: string }) {
   const model = body.model ?? 'sonnet', rounds = Math.max(0, Math.min(2, body.rounds ?? 1));
-  const d = await store.getCharacter(p, c.req.param('c'));
+  const d = await store.getCharacter(p, characterId);
   const { style } = await store.getProject(p);
   if (!d.rig?.parts.length) throw new store.HttpError(400, 'cut the rig parts first');
   const m = d.moves.find(x => x.id === body.move);
@@ -191,11 +190,10 @@ rigApi.post('/projects/:p/characters/:c/rig/animate', async c => {
   const parts = d.rig.parts;
   let usage = ZERO, notes = '';
   const existing = d.rig.clips[m.id];
-  let clip: RigClip;
   // first pass: new keys, or a revision of the existing clip when there are notes
   const first = await keyMove(style, d, parts, m.id, model, rig.imagePath, existing && body.feedback ? { clip: existing, feedback: body.feedback } : undefined);
   usage = add(usage, first.usage); notes = first.data.notes;
-  clip = toClip(first.data, m.frames, m.fps, m.loop, parts);
+  let clip = toClip(first.data, m.frames, m.fps, m.loop, parts);
   // review passes: Claude looks at what its keys actually render to and fixes them
   for (let i = 0; i < rounds; i++) {
     const frames = renderClip(rig.ref, parts, clip);
@@ -213,6 +211,49 @@ rigApi.post('/projects/:p/characters/:c/rig/animate', async c => {
   await logUsage(store.projectPath(p), 'rig-keys', { data: null, usage, model });
   const fresh = await store.getCharacter(p, d.id);
   const saved = await store.saveCharacter(p, d.id, { ...fresh, rig: { parts: fresh.rig?.parts ?? parts, clips: { ...(fresh.rig?.clips ?? {}), [m.id]: clip } } });
-  return c.json({ design: saved, clip, notes, usage });
+  return { design: saved, clip, notes, usage };
+}
+
+rigApi.post('/projects/:p/characters/:c/rig/animate', async c => c.json(await animateMove(c.req.param('p'), c.req.param('c'), await c.req.json())));
+
+// ---------- the moveset queue: many moves, one after another, in the background ----------
+
+export interface Job { id: string; project: string; character: string; move: string; status: 'queued' | 'running' | 'done' | 'failed'; model: Model; rounds: number; usage?: ClaudeUsage; error?: string; queuedAt: string; startedAt?: string; finishedAt?: string }
+const jobs: Job[] = [];
+let running = false;
+
+async function pump() {
+  if (running) return;
+  running = true;
+  try {
+    for (let job = jobs.find(j => j.status === 'queued'); job; job = jobs.find(j => j.status === 'queued')) {
+      job.status = 'running'; job.startedAt = new Date().toISOString();
+      try {
+        const r = await animateMove(job.project, job.character, { move: job.move, model: job.model, rounds: job.rounds });
+        job.status = 'done'; job.usage = r.usage;
+      } catch (e) { job.status = 'failed'; job.error = e instanceof Error ? e.message : String(e); }
+      job.finishedAt = new Date().toISOString();
+    }
+  } finally { running = false; }
+}
+
+rigApi.post('/projects/:p/characters/:c/rig/queue', async c => {
+  const p = c.req.param('p'), ch = c.req.param('c');
+  const body = await c.req.json<{ moves: string[]; model?: Model; rounds?: number }>();
+  const d = await store.getCharacter(p, ch);
+  if (!d.rig?.parts.length) throw new store.HttpError(400, 'cut the rig parts first');
+  const now = new Date().toISOString();
+  for (const move of body.moves.filter(m => d.moves.some(x => x.id === m))) {
+    if (jobs.some(j => j.project === p && j.character === ch && j.move === move && (j.status === 'queued' || j.status === 'running'))) continue;
+    jobs.push({ id: `${Date.now().toString(36)}-${move}`, project: p, character: ch, move, status: 'queued', model: body.model ?? 'sonnet', rounds: Math.max(0, Math.min(2, body.rounds ?? 1)), queuedAt: now });
+  }
+  void pump();
+  return c.json(jobs.filter(j => j.project === p));
+});
+rigApi.get('/projects/:p/queue', c => c.json(jobs.filter(j => j.project === c.req.param('p')).slice(-40)));
+rigApi.delete('/projects/:p/queue/:id', c => {
+  const j = jobs.find(x => x.id === c.req.param('id') && x.project === c.req.param('p'));
+  if (j?.status === 'queued') jobs.splice(jobs.indexOf(j), 1);
+  return c.json(jobs.filter(x => x.project === c.req.param('p')));
 });
 

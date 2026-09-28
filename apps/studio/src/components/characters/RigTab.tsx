@@ -8,6 +8,7 @@ import { Icon } from '../../icons.tsx';
 import { mergeIntoAsset } from '../../merge.ts';
 import { loadImage, toPixels } from '../../pixels.ts';
 import { ClaudeButton, type TabProps } from './shared.tsx';
+import { kickQueue, useQueue } from '../../queue.ts';
 
 type Pt = [number, number];
 const HUES = [265, 190, 140, 35, 330, 90, 210, 10, 300, 165, 50, 240];
@@ -59,6 +60,7 @@ export function RigTab(props: TabProps) {
         claude={<ClaudeButton label={parts.length ? 'Recut parts with Claude' : 'Cut the parts with Claude'} busyLabel="Cutting…" busy={busy === 'rig-parts'} icon="scissors"
           onClick={() => { if (!parts.length || confirm('Replace the current parts with a new cut? Existing clips keep their angles by part name.')) void runClaude('rig-parts', () => api.rigSuggest(projectId, d.id, model)); }}
           title="Claude reads the reference pixel by pixel and cuts torso, head, arms, legs and props with joints. One call, a few minutes; you only do this once per character." />} />
+      {parts.length > 0 && <MovesetQueue {...props} />}
       {parts.length > 0 && <ClipEditor {...props} ref_={ref} parts={parts} refPivot={info.pivot} linked={linked ?? null} onSaved={onAssetsChanged} notify={notify} fail={fail} />}
     </div>
   );
@@ -384,6 +386,60 @@ function ClipEditor({ projectId, design: d, update, runClaude, busy, model, ref_
           </div>
         </div>
       </div>
+    </section>
+  );
+}
+
+// ---------- animate the whole moveset in the background ----------
+
+function MovesetQueue({ projectId, design: d, model, fail }: TabProps) {
+  const jobs = useQueue().filter(j => j.character === d.id);
+  const clips = d.rig?.clips ?? {};
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(d.moves.filter(m => !clips[m.id]).map(m => m.id)));
+  const [rounds, setRounds] = useState(1);
+  const active = jobs.filter(j => j.status === 'queued' || j.status === 'running');
+  const minutes = picked.size * (3 + rounds * 3);
+  const start = async () => {
+    try {
+      if ('Notification' in window && Notification.permission === 'default') void Notification.requestPermission();
+      await api.queueMoves(projectId, d.id, { moves: [...picked], model, rounds });
+      kickQueue(); setOpen(false);
+    } catch (e) { fail(e); }
+  };
+  return (
+    <section className="card rig-queue">
+      <div className="card-head">
+        <h3><Icon name="layers" size={14} /> Whole moveset</h3>
+        <span className="dim small">{active.length ? `${active.length} move${active.length > 1 ? 's' : ''} in the queue: keep working, you'll be notified` : `${Object.keys(clips).length} of ${d.moves.length} moves keyed`}</span>
+        <div className="spacer" />
+        <button onClick={() => setOpen(o => !o)} aria-expanded={open}><Icon name="wand" /> Animate several moves…</button>
+      </div>
+      {open && (
+        <div className="queue-pick">
+          {d.moves.map(m => (
+            <label key={m.id} className="toggle"><input type="checkbox" checked={picked.has(m.id)} onChange={() => setPicked(s => { const n = new Set(s); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n; })} /> {m.name} <span className="dim small">{m.frames}f{clips[m.id] ? ' · keyed (redo)' : ''}</span></label>
+          ))}
+          <div className="rig-row">
+            <select className="compact" value={rounds} onChange={e => setRounds(+e.target.value)} aria-label="Review rounds"><option value={0}>No review</option><option value={1}>1 review each</option><option value={2}>2 reviews each</option></select>
+            <span className="dim small">≈ {minutes} min with {model === 'opus' ? 'Opus' : model === 'haiku' ? 'Haiku' : 'Sonnet'}, one Claude call per pass, runs on the server one after another</span>
+            <div className="spacer" />
+            <button className="primary" disabled={!picked.size} onClick={() => void start()}><Icon name="play" /> Queue {picked.size} move{picked.size === 1 ? '' : 's'}</button>
+          </div>
+        </div>
+      )}
+      {jobs.length > 0 && (
+        <ul className="queue-jobs">
+          {jobs.slice(-8).map(j => (
+            <li key={j.id} className={`job ${j.status}`}>
+              <span className="job-dot" />
+              <strong>{d.moves.find(m => m.id === j.move)?.name ?? j.move}</strong>
+              <span className="dim small">{j.status === 'running' ? 'animating…' : j.status === 'queued' ? 'waiting' : j.status === 'done' ? `done${j.usage ? ` · ${Math.round(j.usage.output / 1000)}k out` : ''}` : j.error}</span>
+              {j.status === 'queued' && <button className="icon-btn" onClick={() => void api.cancelJob(projectId, j.id).then(kickQueue)} aria-label="Remove from queue"><Icon name="x" size={12} /></button>}
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

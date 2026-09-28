@@ -122,5 +122,7 @@ export const api = {
   // rig: parts cut once, moves as keyframes
   rigSuggest: (p: string, c: string, model: Model) => track('shaping', 'Cutting the rig', () => call<{ design: CharacterDesign; notes: string; usage: Usage }>(`/projects/${p}/characters/${c}/rig/suggest`, json({ model }))),
   rigAnimate: (p: string, c: string, body: { move: string; model: Model; rounds: number; feedback?: string }) => track('weaving', `Keyframing ${body.move}`, () => call<{ design: CharacterDesign; notes: string; usage: Usage }>(`/projects/${p}/characters/${c}/rig/animate`, json(body))),
+  queueMoves: (p: string, c: string, body: { moves: string[]; model: Model; rounds: number }) => call<unknown[]>(`/projects/${p}/characters/${c}/rig/queue`, json(body)),
+  cancelJob: (p: string, id: string) => call<unknown[]>(`/projects/${p}/queue/${id}`, { method: 'DELETE' }),
   sheetUrl: (p: string, a: SpriteAsset) => `/api/projects/${p}/assets/${a.id}/sheet.png?v=${encodeURIComponent(a.updatedAt)}`,
 };
