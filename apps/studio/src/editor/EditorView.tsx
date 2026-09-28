@@ -4,7 +4,7 @@ import { Icon } from '../icons.tsx';
 import { api } from '../api.ts';
 import { useImage } from '../pixels.ts';
 import { FrameThumb } from '../components/FrameThumb.tsx';
-import { Canvas } from './Canvas.tsx';
+import { Canvas, fitZoom } from './Canvas.tsx';
 import { ColorPanel, LayersPanel } from './Panels.tsx';
 import { FrameTools } from './FrameTools.tsx';
 import { SlicerDialog } from './SlicerDialog.tsx';
@@ -118,7 +118,7 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
     if (!active || !started || sliceFiles) return;
     const s = ed.ref.current, mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
     if (mod && k === 's') { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur(); void save(); return; }
-    if ((e.target as HTMLElement).closest('input, textarea, select')) return;
+    if ((e.target as HTMLElement).closest?.('input, textarea, select')) return;
     const f = s.doc.frames[s.frame];
     if (mod && k === 'z') { e.preventDefault(); if (e.shiftKey) ed.redo(); else ed.undo(); return; }
     if (mod && k === 'y') { e.preventDefault(); ed.redo(); return; }
@@ -143,6 +143,13 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
       return;
     }
     if (mod && k === "'") { e.preventDefault(); ed.set(x => ({ view: { ...x.view, grid: !x.view.grid } })); return; }
+    // zoom keys zoom the sprite, never the page (with or without Ctrl)
+    if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0') {
+      e.preventDefault();
+      if (e.key === '0') ed.set(x => ({ view: { ...x.view, zoom: 0, panX: 0, panY: 0 } }));
+      else ed.set(x => ({ view: { ...x.view, zoom: Math.max(1, Math.min(64, (x.view.zoom || fitZoom()) + (e.key === '-' ? -1 : 1))) } }));
+      return;
+    }
     if (mod) return;
     if (e.key === 'Enter') { e.preventDefault(); if (s.floating) ed.settle(); else ed.set({ playing: !s.playing }); return; }
     if (e.key === 'Escape') { if (s.floating) ed.settle(); ed.set({ selection: null }); return; }
@@ -171,9 +178,6 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
     if (e.key === '[' || e.key === ']') { ed.set(x => ({ opts: { ...x.opts, brush: Math.max(1, Math.min(16, x.opts.brush + (e.key === ']' ? 1 : -1))) } })); return; }
     if (k === 'x') { ed.set(x => ({ primary: x.secondary, secondary: x.primary })); return; }
     if (k === 'o') { ed.set(x => ({ onion: { ...x.onion, on: !x.onion.on } })); return; }
-    if (e.key === '+' || e.key === '=') { ed.set(x => ({ view: { ...x.view, zoom: Math.min(64, (x.view.zoom || 8) + 1) } })); return; }
-    if (e.key === '-') { ed.set(x => ({ view: { ...x.view, zoom: Math.max(1, (x.view.zoom || 8) - 1) } })); return; }
-    if (e.key === '0') { ed.set(x => ({ view: { ...x.view, zoom: 0, panX: 0, panY: 0 } })); return; }
     if (s.floating && (k === 'h' && e.shiftKey)) { ed.set({ floating: transformFloating(s.floating, 'flip-h') }); return; }
     if (s.floating && (k === 'v' && e.shiftKey)) { ed.set({ floating: transformFloating(s.floating, 'flip-v') }); return; }
     if (s.floating && k === 'r') { ed.set({ floating: transformFloating(s.floating, e.shiftKey ? 'rot-ccw' : 'rot-cw') }); return; }

@@ -42,6 +42,10 @@ function tinted(img: PixelImage, rgb: [number, number, number] | null): HTMLCanv
   return toCanvas(out);
 }
 
+/** The zoom that fits the sprite in the stage (what zoom 0 means), for the zoom keys. */
+let lastFit = 8;
+export const fitZoom = () => lastFit;
+
 export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: string, secondary: boolean) => void }) {
   const { state, ref } = ed;
   const { doc, frame, layerId, view } = state;
@@ -72,13 +76,14 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
 
   // hold space = temporary hand
   useEffect(() => {
-    const down = (e: KeyboardEvent) => { if (e.code === 'Space' && !(e.target as HTMLElement).closest('input, textarea, select')) { e.preventDefault(); setSpace(true); } };
+    const down = (e: KeyboardEvent) => { if (e.code === 'Space' && !(e.target as HTMLElement).closest?.('input, textarea, select')) { e.preventDefault(); setSpace(true); } };
     const up = (e: KeyboardEvent) => { if (e.code === 'Space') setSpace(false); };
     window.addEventListener('keydown', down); window.addEventListener('keyup', up);
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
   }, []);
 
   const fit = Math.max(1, Math.floor(Math.min((size.w - 40) / doc.width, (size.h - 40) / doc.height)));
+  lastFit = fit;
   const z = view.zoom || fit;
   const ox = Math.floor((size.w - doc.width * z) / 2) + view.panX;
   const oy = Math.floor((size.h - doc.height * z) / 2) + view.panY;
@@ -356,18 +361,42 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     void e;
   };
 
-  const onWheel = (e: React.WheelEvent) => {
+  // Wheel / pinch zoom around the cursor. Registered as a NON-passive native listener so
+  // preventDefault stops the browser from zooming the whole page (Ctrl+wheel, trackpad pinch).
+  // Deltas accumulate so a trackpad's many small events zoom as smoothly as a mouse notch.
+  const wheelAcc = useRef(0);
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault();
     const s = ref.current;
+    if (!e.ctrlKey && !e.metaKey && (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY))) {
+      // horizontal scroll / Shift+wheel pans
+      const dx = e.shiftKey ? e.deltaY : e.deltaX;
+      ed.set({ view: { ...s.view, panX: Math.round(s.view.panX - dx) } });
+      return;
+    }
+    const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+    wheelAcc.current += e.deltaY * unit * (e.ctrlKey ? 2.5 : 1); // pinch deltas are tiny
+    if (Math.abs(wheelAcc.current) < 40) return;
+    const dir = wheelAcc.current < 0 ? 1 : -1;
+    wheelAcc.current = 0;
     const cur = s.view.zoom || fit;
-    const next = Math.max(1, Math.min(64, e.deltaY < 0 ? cur + Math.max(1, Math.round(cur * 0.15)) : cur - Math.max(1, Math.round(cur * 0.15))));
+    const next = Math.max(1, Math.min(64, cur + dir * Math.max(1, Math.round(cur * 0.15))));
     if (next === cur) return;
-    // zoom around the cursor
     const r = canvas.current!.getBoundingClientRect();
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     const px = (mx - ox) / cur, py = (my - oy) / cur;
     const nox = Math.floor((size.w - s.doc.width * next) / 2), noy = Math.floor((size.h - s.doc.height * next) / 2);
     ed.set({ view: { ...s.view, zoom: next, panX: Math.round(mx - px * next - nox), panY: Math.round(my - py * next - noy) } });
   };
+  const wheelRef = useRef(onWheel);
+  wheelRef.current = onWheel;
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const h = (e: WheelEvent) => wheelRef.current(e);
+    el.addEventListener('wheel', h, { passive: false });
+    return () => el.removeEventListener('wheel', h);
+  }, []);
 
   const cursor = space || state.tool === 'hand' ? (gesture.current ? 'grabbing' : 'grab') : state.tool === 'move' ? 'move' : state.tool === 'picker' ? 'copy' : 'crosshair';
 
@@ -376,7 +405,7 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
       <canvas
         ref={canvas} style={{ width: size.w, height: size.h, cursor }}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={() => setHover(null)}
-        onContextMenu={e => e.preventDefault()} onWheel={onWheel}
+        onContextMenu={e => e.preventDefault()}
       />
       <div className="ed-status mono">
         {hover ? `${hover[0]}, ${hover[1]}` : `${doc.width}×${doc.height}`} · {z}× · frame {frame + 1}/{doc.frames.length}
