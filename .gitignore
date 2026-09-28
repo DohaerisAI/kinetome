@@ -2,3 +2,5 @@ node_modules
 dist
 workspace
 *.log
+ref/
+*:Zone.Identifier
