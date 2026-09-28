@@ -19,14 +19,14 @@ function Row({ projectId, asset, active, onClick }: { projectId: string; asset: 
   );
 }
 
-export function AssetList({ projectId, assets, selectedId, onSelect }: {
-  projectId: string; assets: SpriteAsset[]; selectedId: string | null; onSelect: (id: string) => void;
+export function AssetList({ projectId, assets, selectedId, onSelect, onNewEffect }: {
+  projectId: string; assets: SpriteAsset[]; selectedId: string | null; onSelect: (id: string) => void; onNewEffect: () => void;
 }) {
   const [q, setQ] = useState('');
   const shown = assets.filter(a => !q || `${a.name} ${a.kind} ${a.animations.map(x => x.name).join(' ')}`.toLowerCase().includes(q.toLowerCase()));
   return (
     <aside className="panel asset-list">
-      <div className="panel-title">Library <span className="dim">{assets.length}</span></div>
+      <div className="panel-title">Library <span className="dim">{assets.length}</span><div className="spacer" /><button className="icon-btn" onClick={onNewEffect} title="New effect: slash, dust, spark, leaves, magic" aria-label="New effect"><Icon name="sparkle" size={14} /></button></div>
       {assets.length > 4 && (
         <div className="search">
           <Icon name="search" />

@@ -760,6 +760,25 @@ a.button.disabled { opacity: .4; pointer-events: none; }
 .tiles-legend li { display: flex; flex-direction: column; }
 @media (max-width: 1300px) { .tiles-body { grid-template-columns: 250px 1fr; } .tiles-sheet { grid-column: 1 / -1; } }
 
+
+/* ============ effects + portraits ============ */
+.fx-modal { width: min(900px, calc(100vw - 32px)); }
+.fx-body { display: grid; grid-template-columns: 170px 1fr 260px; gap: 16px; padding: 16px 20px; overflow: auto; }
+.fx-kinds { display: flex; flex-direction: column; gap: 6px; }
+.fx-kinds .exp-engine { min-height: 0; padding: 10px 12px; }
+.fx-preview { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.fx-opts { display: flex; flex-direction: column; gap: 6px; }
+.fx-opts h3 { margin: 10px 0 2px; }
+.fx-colors { display: flex; flex-direction: column; gap: 4px; }
+.fx-color { font-family: var(--mono); }
+.portrait-card { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: center; }
+.portrait-previews { display: flex; align-items: flex-end; gap: 14px; }
+.portrait-big, .portrait-icon { background: repeating-conic-gradient(#171722 0% 25%, #12121b 0% 50%) 50% / 12px 12px; border: 1px solid var(--line); }
+.portrait-big { width: 128px; height: 128px; }
+.portrait-icon { width: 64px; height: 64px; }
+.panel-title .icon-btn { padding: 4px; margin-left: 6px; }
+.panel-title .spacer { flex: 1; }
+
 @media (max-width: 1580px) { .search-btn { min-width: 0; padding: 4px 9px; } .search-btn span, .search-btn kbd { display: none; } }
 @media (max-width: 1440px) { .topbar .godot-btn span { display: none; } }
 @media (max-width: 1500px) { .tab:not(.active) span { display: none; } .tab:not(.active) { padding: 4px 10px; } }

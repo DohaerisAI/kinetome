@@ -24,6 +24,7 @@ import { useClaudeActivity } from './claudeActivity.ts';
 import { ProjectMenu } from './components/ProjectMenu.tsx';
 import { TrashDialog } from './components/TrashDialog.tsx';
 import { ExportDialog } from './components/ExportDialog.tsx';
+import { EffectsDialog } from './components/EffectsDialog.tsx';
 import { CheckPanel, LightingPanel, VariantsPanel } from './components/SpritePanels.tsx';
 import { pop, slideTo, viewIn } from './motion.ts';
 
@@ -84,6 +85,7 @@ export function App() {
   const [noticeAction, setNoticeAction] = useState<{ label: string; run: () => void } | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
   const [exportFor, setExportFor] = useState<string[] | null>(null);
+  const [effectsOpen, setEffectsOpen] = useState(false);
   const [assets, setAssets] = useState<SpriteAsset[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [animName, setAnimName] = useState<string | null>(null);
@@ -347,6 +349,7 @@ export function App() {
     ...TABS.map(t => ({ id: `tab-${t.id}`, label: `Go to ${t.label}`, group: 'Navigate', icon: t.icon, run: () => setTab(t.id) })),
     { id: 'import', label: 'Import art…', group: 'Actions', icon: 'upload' as IconName, keywords: 'sprite sheet gif video image pixelize', run: () => fileInput.current?.click() },
     { id: 'new-project', label: 'New project…', group: 'Actions', icon: 'plus' as IconName, run: () => void newProject() },
+    { id: 'effect', label: 'New effect (slash, dust, spark, leaves, magic)…', group: 'Actions', icon: 'sparkle' as IconName, keywords: 'vfx particles fx', run: () => setEffectsOpen(true) },
     { id: 'trash', label: 'Open the trash', group: 'Actions', icon: 'trash' as IconName, keywords: 'restore deleted undo', run: () => setTrashOpen(true) },
     ...(pid ? [
       { id: 'rename-project', label: 'Rename this project…', group: 'Project', icon: 'pencil' as IconName, run: () => void renameProject() },
@@ -426,7 +429,7 @@ export function App() {
 
       {ready && pid && style && tab === 'library' && (
         <main className="library">
-          <AssetList projectId={pid} assets={assets} selectedId={selectedId} onSelect={setSelectedId} />
+          <AssetList projectId={pid} assets={assets} selectedId={selectedId} onSelect={setSelectedId} onNewEffect={() => setEffectsOpen(true)} />
           <Viewer asset={selected} img={img} animName={animName} onAnim={setAnimName} />
           <Inspector
             asset={selected} img={img} style={style} animName={animName} extraPalette={selected ? paletteFor(selected.id) : []}
@@ -491,6 +494,8 @@ export function App() {
           onCancel={() => { pendingImport.current = null; setPixelizeFiles(null); }} onCreate={importPixelized} onMerge={mergePixelized} onError={fail} />
       )}
       {dragging && <div className="dropveil"><div className="dropveil-card"><Icon name="upload" size={28} /><strong>Drop to import</strong><span className="dim">Sprite sheets, images, GIFs or videos</span></div></div>}
+      {effectsOpen && pid && style && <EffectsDialog projectId={pid} style={style} extraColors={designs.flatMap(d => designPalette(d))} fail={fail} onClose={() => setEffectsOpen(false)}
+        onCreated={a => { setAssets(list => [...list, a]); setSelectedId(a.id); setTab('library'); notify(`Added ${a.name} to the library`); }} />}
       {exportFor && pid && <ExportDialog projectId={pid} project={project} assets={assets} initial={exportFor} onClose={() => setExportFor(null)} onSync={project?.godot.path ? () => void syncGodot() : null} />}
       {trashOpen && <TrashDialog projectId={pid} projectName={id => projects.find(p => p.id === id)?.name ?? id} onClose={() => setTrashOpen(false)} onRestored={afterRestore} fail={fail} />}
       {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}

@@ -114,6 +114,24 @@ export function designReferencePrompt(style: StyleBible, d: CharacterDesign): st
 }
 
 /**
+ * Gemini prompt for a dialogue portrait: head and shoulders, bigger than the sprite so
+ * the face reads, same colors and outline, the personality in the expression.
+ */
+export function designPortraitPrompt(style: StyleBible, d: CharacterDesign, size = 64): string {
+  return [
+    `Using the attached reference image of ${d.name}, create a pixel-art bust portrait of the SAME character for a game dialogue box.`,
+    `The character: ${describe(d)}`,
+    ...invariantLines(d, false),
+    `Framing: head and shoulders only, three-quarter view facing right, filling a ${size}x${size} pixel square.`,
+    d.personality ? `Expression: show their personality: ${d.personality}.` : 'Expression: a clear, characterful expression.',
+    ...colorLines(d),
+    `Pixel art at ${size}x${size}: crisp square pixels, no blur, no anti-aliasing, no gradients.${d.outline ? ` A clean 1-pixel outline in ${d.outline}.` : ''}`,
+    ...(style.notes.trim() ? [`Art direction: ${style.notes.trim()}`] : []),
+    ...BACKDROP,
+  ].join('\n');
+}
+
+/**
  * Gemini prompt for one animation sheet (step 2). Structured so the generator keeps the
  * character on-model (invariants repeated and checked), honours the grid it can actually
  * draw, and keeps one scale across frames. Poses and move notes come from Claude's draft.
