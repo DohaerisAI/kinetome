@@ -1,9 +1,17 @@
 import { Icon, type IconName } from '../icons.tsx';
 import type { EditorApi, Tool } from './useEditor.ts';
+import type { Dither } from './model.ts';
+
+/** A tiny swatch of the dither pattern itself, drawn with CSS. */
+function DitherSwatch({ level }: { level: Dither }) {
+  const cells = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  return <span className="ed-dither-sw" aria-hidden>{cells.map((v, i) => <i key={i} className={!level || v < (level / 100) * 16 ? 'on' : ''} />)}</span>;
+}
 
 export const TOOLS: { id: Tool; icon: IconName; label: string; key: string }[] = [
   { id: 'pencil', icon: 'pencil', label: 'Pencil', key: 'B' },
   { id: 'eraser', icon: 'eraser', label: 'Eraser', key: 'E' },
+  { id: 'shade', icon: 'shade', label: 'Shade', key: 'D' },
   { id: 'bucket', icon: 'bucket', label: 'Fill', key: 'G' },
   { id: 'picker', icon: 'eyedropper', label: 'Pick color', key: 'I' },
   { id: 'line', icon: 'line', label: 'Line', key: 'L' },
@@ -22,7 +30,7 @@ export function ToolBar({ ed }: { ed: EditorApi }) {
     <div className="ed-tools" role="toolbar" aria-label="Tools" aria-orientation="vertical">
       {TOOLS.map((t, i) => (
         <span key={t.id} style={{ display: 'contents' }}>
-          {(i === 4 || i === 7 || i === 10) && <span className="ed-tools-sep" />}
+          {(i === 5 || i === 8 || i === 11) && <span className="ed-tools-sep" />}
           <button className={state.tool === t.id ? 'ed-tool active' : 'ed-tool'} onClick={() => { if (t.id !== 'move') ed.settle(); ed.set({ tool: t.id }); }}
             title={`${t.label} (${t.key})`} aria-label={t.label} aria-pressed={state.tool === t.id}>
             <Icon name={t.icon} />
@@ -45,7 +53,8 @@ export function OptionsBar({ ed }: { ed: EditorApi }) {
   const o = state.opts;
   const setO = (patch: Partial<typeof o>) => ed.set(s => ({ opts: { ...s.opts, ...patch } }));
   const t = state.tool;
-  const brushTools = ['pencil', 'eraser', 'line', 'rect', 'ellipse'].includes(t);
+  const brushTools = ['pencil', 'eraser', 'shade', 'line', 'rect', 'ellipse'].includes(t);
+  const ditherTools = ['pencil', 'eraser', 'line', 'rect', 'ellipse', 'bucket'].includes(t);
   const toggle = (on: boolean, label: string, onClick: () => void, icon?: IconName, title?: string) => (
     <button className={on ? 'chip active' : 'chip'} onClick={onClick} aria-pressed={on} title={title}>{icon && <Icon name={icon} size={12} />} {label}</button>
   );
@@ -60,6 +69,16 @@ export function OptionsBar({ ed }: { ed: EditorApi }) {
       )}
       {(t === 'pencil' || t === 'eraser') && toggle(o.pixelPerfect, 'Pixel perfect', () => setO({ pixelPerfect: !o.pixelPerfect }), undefined, 'Removes doubled corners from 1px freehand lines')}
       {(t === 'rect' || t === 'ellipse') && toggle(o.fillShapes, 'Filled', () => setO({ fillShapes: !o.fillShapes }))}
+      {ditherTools && (
+        <span className="seg compact ed-dither" role="radiogroup" aria-label="Dither pattern" title="Paint through a dither pattern: texture, gradients and soft shadows the pixel-art way">
+          {([0, 25, 50, 75] as Dither[]).map(l => (
+            <button key={l} role="radio" aria-checked={o.dither === l} className={o.dither === l ? 'active' : ''} onClick={() => setO({ dither: l })} title={l ? `${l}% dither` : 'Solid'}>
+              <DitherSwatch level={l} />{l ? `${l}%` : 'Solid'}
+            </button>
+          ))}
+        </span>
+      )}
+      {t === 'shade' && <span className="dim small">Left = lighter · right = darker · {state.doc.palette.length >= 2 ? 'steps along your palette, staying in each color’s hue family' : 'hue-shifted (warm lights, cool shadows); add a palette to shade along its ramps'}</span>}
       {(t === 'bucket' || t === 'wand') && (
         <>
           {toggle(o.contiguous, 'Contiguous', () => setO({ contiguous: !o.contiguous }), undefined, 'Off = every pixel of that color')}

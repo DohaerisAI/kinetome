@@ -3,6 +3,7 @@ import type { CharacterDesign, StyleBible } from '@kinetome/core';
 import { designPalette } from '@kinetome/core';
 import { Icon } from '../icons.tsx';
 import { ColorWheel } from '../components/ColorWheel.tsx';
+import { EyedropperButton } from '../components/Eyedropper.tsx';
 import { addLayer, duplicateLayer, mergeDown, moveLayer, patchLayer, removeLayer, usedColors } from './model.ts';
 import type { EditorApi } from './useEditor.ts';
 
@@ -27,6 +28,7 @@ export function ColorPanel({ ed, style, designs }: { ed: EditorApi; style: Style
         <button className="ed-big-sw small" style={{ background: state.secondary }} onClick={() => ed.set(s => ({ primary: s.secondary, secondary: s.primary }))} title={`Secondary ${state.secondary} (click to swap)`} aria-label="Secondary color" />
         <input className="mono" value={state.primary} spellCheck={false} aria-label="Primary hex"
           onChange={e => { if (/^#[0-9a-f]{6}$/i.test(e.target.value)) ed.set({ primary: e.target.value.toLowerCase() }); }} />
+        <EyedropperButton onPick={c => ed.set({ primary: c })} title="Pick the primary color from anywhere on screen (a reference, another app)" />
       </div>
       {wheel && <div className="ed-wheel"><ColorWheel value={state.primary} onChange={hex => ed.set({ primary: hex })} swatches={[]} /></div>}
 

@@ -2,9 +2,10 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   commitFloatingInto, createDoc, emptyHistory, record, redo as redoH, undo as undoH,
   type EditorDoc, type Floating, type History, type Selection,
+  type Dither,
 } from './model.ts';
 
-export type Tool = 'pencil' | 'eraser' | 'bucket' | 'picker' | 'line' | 'rect' | 'ellipse' | 'select' | 'lasso' | 'wand' | 'move' | 'hand';
+export type Tool = 'pencil' | 'eraser' | 'shade' | 'bucket' | 'picker' | 'line' | 'rect' | 'ellipse' | 'select' | 'lasso' | 'wand' | 'move' | 'hand';
 
 export interface ToolOptions {
   brush: number;
@@ -16,11 +17,16 @@ export interface ToolOptions {
   tolerance: number;
   /** Magic wand / bucket read the flattened frame instead of the current layer. */
   sampleAll: boolean;
+  /** Paint through an ordered-dither pattern (0 = solid). */
+  dither: Dither;
 }
 
 export interface Onion { on: boolean; prev: number; next: number; tint: boolean; opacity: number }
 
 export interface View { zoom: number; panX: number; panY: number; grid: boolean; showPivot: boolean; bg: 'checker' | 'dark' | 'light' }
+
+/** A tracing / pose reference drawn over or under the sprite (never saved into it). */
+export interface Reference { url: string; name: string; opacity: number; show: boolean; front: boolean }
 
 export interface EditorSource { assetId: string | null; updatedAt?: string }
 
@@ -43,11 +49,12 @@ export interface EditorState {
   paletteLock: boolean;
   playing: boolean;
   source: EditorSource;
+  reference: Reference | null;
   /** Last committed pixel edit (for "apply this fix to other frames"). */
   lastEdit: { layerId: string; frame: number; before: EditorDoc['cels'][string]; after: EditorDoc['cels'][string]; label: string } | null;
 }
 
-const DEFAULT_OPTS: ToolOptions = { brush: 1, pixelPerfect: true, mirrorX: false, mirrorY: false, fillShapes: false, contiguous: true, tolerance: 0, sampleAll: false };
+const DEFAULT_OPTS: ToolOptions = { brush: 1, pixelPerfect: true, mirrorX: false, mirrorY: false, fillShapes: false, contiguous: true, tolerance: 0, sampleAll: false, dither: 0 };
 
 export function initialState(doc?: EditorDoc): EditorState {
   const d = doc ?? createDoc(48, 48, 1, 'Untitled');
@@ -57,7 +64,7 @@ export function initialState(doc?: EditorDoc): EditorState {
     selection: null, floating: null,
     view: { zoom: 0, panX: 0, panY: 0, grid: false, showPivot: true, bg: 'checker' },
     onion: { on: false, prev: 1, next: 1, tint: true, opacity: 0.35 },
-    paletteLock: false, playing: false, source: { assetId: null }, lastEdit: null,
+    paletteLock: false, playing: false, source: { assetId: null }, reference: null, lastEdit: null,
   };
 }
 
@@ -112,7 +119,7 @@ export function useEditor() {
   const open = useCallback((doc: EditorDoc, source: EditorSource = { assetId: null }) => {
     setState(s => ({
       ...initialState(doc), tool: s.tool, opts: s.opts, primary: s.primary, secondary: s.secondary, view: { ...s.view, zoom: 0, panX: 0, panY: 0 }, onion: s.onion,
-      paletteLock: doc.palette.length >= 2 && s.paletteLock, source,
+      paletteLock: doc.palette.length >= 2 && s.paletteLock, source, reference: s.reference,
     }));
   }, []);
 

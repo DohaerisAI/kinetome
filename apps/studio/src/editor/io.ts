@@ -1,7 +1,7 @@
 import type { PixelImage, SpriteAsset } from '@kinetome/core';
 import { api } from '../api.ts';
 import { canvasToPng, download, loadImage, toPixels } from '../pixels.ts';
-import { blank, celKey, docFromAsset, docToSheet, type EditorDoc } from './model.ts';
+import { blank, celKey, composite, docFromAsset, docToSheet, encodeGif, scaleNearest, type EditorDoc } from './model.ts';
 
 const COLS = 16;
 
@@ -95,7 +95,35 @@ export async function saveToLibrary(projectId: string, doc: EditorDoc, existing:
 /** Downloads the flattened sheet + a JSON with frames and animations. */
 export async function downloadSheet(doc: EditorDoc): Promise<void> {
   const out = docToSheet(doc);
-  const base = doc.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'sprite';
+  const base = fileBase(doc);
   download(`${base}.png`, await imageToPng(out.sheet));
   download(`${base}.json`, new Blob([JSON.stringify({ version: 1, image: `${base}.png`, frameWidth: out.frameWidth, frameHeight: out.frameHeight, frames: out.rects, pivot: out.pivot, animations: out.animations }, null, 2)], { type: 'application/json' }));
+}
+
+const fileBase = (doc: EditorDoc) => doc.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'sprite';
+
+/** Animated GIF of a frame range (a tag or the whole timeline), each frame at its own duration. */
+export function downloadGif(doc: EditorDoc, range: { from: number; to: number; name?: string }, opts: { scale: number; loop: boolean }): void {
+  const idx = Array.from({ length: range.to - range.from + 1 }, (_, k) => range.from + k);
+  const gif = encodeGif(idx.map(i => composite(doc, i)), idx.map(i => doc.frames[i].duration), { scale: opts.scale, loop: opts.loop });
+  const suffix = range.name ? `-${range.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : '';
+  download(`${fileBase(doc)}${suffix}.gif`, new Blob([gif as BlobPart], { type: 'image/gif' }));
+}
+
+/** The current frame, flattened, as a PNG (optionally upscaled for sharing). */
+export async function downloadFramePng(doc: EditorDoc, frame: number, scale: number): Promise<void> {
+  const f = composite(doc, frame);
+  download(`${fileBase(doc)}-${frame + 1}.png`, await imageToPng(scale > 1 ? scaleNearest(f, f.width * scale, f.height * scale) : f));
+}
+
+/** Decodes any image file / clipboard blob into pixels. */
+export async function blobToPixels(blob: Blob): Promise<PixelImage> {
+  const bmp = await createImageBitmap(blob);
+  const c = document.createElement('canvas');
+  c.width = bmp.width; c.height = bmp.height;
+  const ctx = c.getContext('2d')!;
+  ctx.drawImage(bmp, 0, 0);
+  bmp.close();
+  const d = ctx.getImageData(0, 0, c.width, c.height);
+  return { width: d.width, height: d.height, data: new Uint8ClampedArray(d.data) } as PixelImage;
 }

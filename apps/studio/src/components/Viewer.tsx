@@ -3,6 +3,7 @@ import type { SpriteAsset } from '@kinetome/core';
 import { Icon } from '../icons.tsx';
 import { drawChecker } from '../pixels.ts';
 import { FrameThumb } from './FrameThumb.tsx';
+import { EyedropperButton } from './Eyedropper.tsx';
 
 type Bg = 'checker' | 'dark' | 'light' | 'custom';
 type Mode = 'auto' | 'loop' | 'pingpong' | 'once';
@@ -26,7 +27,7 @@ export function Viewer({ asset, img, animName, onAnim }: { asset: SpriteAsset | 
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 400, h: 300 });
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(false); // paused until asked: Space or the play button
   const [pos, setPos] = useState(0);
   const [zoom, setZoom] = useState(0); // 0 = fit
   const [prefs, setPrefs] = useState<Prefs>(readPrefs);
@@ -41,7 +42,7 @@ export function Viewer({ asset, img, animName, onAnim }: { asset: SpriteAsset | 
   const n = frames.length;
   const mode: Exclude<Mode, 'auto'> = prefs.mode === 'auto' ? (anim?.loop === false ? 'once' : 'loop') : prefs.mode;
 
-  useEffect(() => { setPos(0); dir.current = 1; setPlaying(true); }, [asset?.id, anim?.name]);
+  useEffect(() => { setPos(0); dir.current = 1; setPlaying(false); }, [asset?.id, anim?.name]);
 
   useEffect(() => {
     const el = wrap.current;
@@ -188,6 +189,7 @@ export function Viewer({ asset, img, animName, onAnim }: { asset: SpriteAsset | 
           <option value="checker">Checker</option><option value="dark">Dark</option><option value="light">Light</option><option value="custom">Custom</option>
         </select>
         {prefs.bg === 'custom' && <input type="color" value={prefs.custom} onChange={e => setPref('custom', e.target.value)} aria-label="Custom background color" />}
+        {prefs.bg === 'custom' && <EyedropperButton onPick={c => setPref('custom', c)} title="Pick the background color from anywhere (e.g. your game's level)" />}
         <select className="compact" value={zoom} onChange={e => setZoom(Number(e.target.value))} aria-label="Zoom">
           <option value={0}>Fit · {fit}×</option>
           {[1, 2, 3, 4, 6, 8, 12, 16, 24].map(v => <option key={v} value={v}>{v}×</option>)}

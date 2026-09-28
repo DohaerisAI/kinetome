@@ -18,7 +18,7 @@ function thumbCanvas(img: PixelImage): HTMLCanvasElement {
 
 /** Composite thumbnails, memoised per frame on the identity of its cels. */
 const frameThumbs = new WeakMap<EditorDoc['cels'], Map<string, PixelImage>>();
-function frameImage(doc: EditorDoc, i: number): PixelImage {
+export function frameImage(doc: EditorDoc, i: number): PixelImage {
   let m = frameThumbs.get(doc.cels);
   if (!m) { m = new Map(); frameThumbs.set(doc.cels, m); }
   const key = `${doc.frames[i].id}|${doc.layers.map(l => `${l.id}${l.visible ? 1 : 0}${l.opacity}`).join(',')}`;

@@ -10,9 +10,10 @@ import { FrameTools } from './FrameTools.tsx';
 import { SlicerDialog } from './SlicerDialog.tsx';
 import { Timeline } from './Timeline.tsx';
 import { OptionsBar, ToolBar } from './Tools.tsx';
-import { downloadSheet, openAsset, saveToLibrary } from './io.ts';
+import { blobToPixels, downloadFramePng, downloadGif, downloadSheet, openAsset, saveToLibrary } from './io.ts';
+import { Preview } from './Preview.tsx';
 import {
-  clearSelected, createDoc, editableCel, extract, invert, isEmpty, playRange, resizeDoc, scaleDoc,
+  clearSelected, createDoc, editableCel, extract, invert, isEmpty, playRange, resizeDoc, scaleDoc, scaleNearest, tagOf,
   transformFloating, trimCanvas, withCel, type Anchor9, type EditorDoc, type Floating,
 } from './model.ts';
 import { useEditor, type Tool } from './useEditor.ts';
@@ -30,6 +31,8 @@ interface Props {
   notify: (msg: string) => void;
   fail: (e: unknown) => void;
 }
+
+const CLIP_MARK = 'kinetome:pixels';
 
 function AssetPick({ projectId, asset, onClick }: { projectId: string; asset: SpriteAsset; onClick: () => void }) {
   const img = useImage(api.sheetUrl(projectId, asset));
@@ -51,7 +54,10 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
   const { doc } = state;
   const [started, setStarted] = useState(false);
   const [sliceFiles, setSliceFiles] = useState<File[] | null>(null);
-  const [menu, setMenu] = useState<null | 'open' | 'new' | 'canvas'>(null);
+  const [menu, setMenu] = useState<null | 'open' | 'new' | 'canvas' | 'export' | 'reference'>(null);
+  const [gifOpts, setGifOpts] = useState({ range: 'tag' as 'tag' | 'all' | 'each', scale: 4, loop: true });
+  const refInput = useRef<HTMLInputElement>(null);
+  const pasteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [newSize, setNewSize] = useState({ w: 48, h: 48, frames: 1 });
   const [canvasSize, setCanvasSize] = useState({ w: 48, h: 48, anchor: 'b' as Anchor9 });
   const [saving, setSaving] = useState(false);
@@ -130,16 +136,18 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
       const cel = editableCel(s.doc, s.layerId, f.id);
       const block = s.floating ?? (s.selection ? extract(cel, s.selection) : extract(cel, { mask: new Uint8Array(s.doc.width * s.doc.height).fill(1), width: s.doc.width, height: s.doc.height }));
       clipboard.current = block;
+      // mark the system clipboard as ours, so Ctrl+V pastes these pixels, not an older image
+      void navigator.clipboard?.writeText(CLIP_MARK).catch(() => {});
       if (k === 'x' && s.selection && !s.floating) ed.commit('Cut', withCel(s.doc, s.layerId, f.id, clearSelected(cel, s.selection)), { selection: null });
       if (k === 'x' && s.floating) ed.set({ floating: null });
       notify(k === 'x' ? 'Cut' : 'Copied');
       return;
     }
     if (mod && k === 'v') {
-      e.preventDefault();
-      if (!clipboard.current) return;
-      ed.settle();
-      ed.set({ floating: { ...clipboard.current }, selection: null, tool: 'move' });
+      // the paste event (below) decides: an image from outside, or our own copied pixels.
+      // If the browser sends no paste event, fall back to the internal clipboard.
+      if (pasteTimer.current) clearTimeout(pasteTimer.current);
+      pasteTimer.current = setTimeout(() => { pasteTimer.current = null; pasteInternal(); }, 80);
       return;
     }
     if (mod && k === "'") { e.preventDefault(); ed.set(x => ({ view: { ...x.view, grid: !x.view.grid } })); return; }
@@ -182,9 +190,77 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
     if (s.floating && (k === 'v' && e.shiftKey)) { ed.set({ floating: transformFloating(s.floating, 'flip-v') }); return; }
     if (s.floating && k === 'r') { ed.set({ floating: transformFloating(s.floating, e.shiftKey ? 'rot-ccw' : 'rot-cw') }); return; }
     if (e.altKey && k === 'n') return;
-    const map: Record<string, Tool> = { b: 'pencil', e: 'eraser', g: 'bucket', i: 'picker', l: 'line', m: 'select', q: 'lasso', w: 'wand', v: 'move', h: 'hand' };
+    const map: Record<string, Tool> = { b: 'pencil', e: 'eraser', d: 'shade', g: 'bucket', i: 'picker', l: 'line', m: 'select', q: 'lasso', w: 'wand', v: 'move', h: 'hand' };
     if (k === 'u') { ed.set({ tool: e.shiftKey ? 'ellipse' : 'rect' }); return; }
     if (map[k]) { if (map[k] !== 'move') ed.settle(); ed.set({ tool: map[k] }); }
+  };
+
+  // ---------- paste: images from anywhere (a screenshot, a Gemini result) or copied pixels ----------
+  const pasteInternal = () => {
+    if (!clipboard.current) return;
+    ed.settle();
+    ed.set({ floating: { ...clipboard.current }, selection: null, tool: 'move' });
+  };
+  const pasteImage = async (blob: Blob) => {
+    try {
+      let img = await blobToPixels(blob);
+      const d = ed.ref.current.doc;
+      let note = '';
+      if (img.width > d.width || img.height > d.height) {
+        const s = Math.min(d.width / img.width, d.height / img.height);
+        img = scaleNearest(img, Math.max(1, Math.round(img.width * s)), Math.max(1, Math.round(img.height * s)));
+        note = ` (scaled to ${Math.round(s * 100)}% to fit)`;
+      }
+      ed.settle();
+      ed.set({ floating: { img, x: Math.floor((d.width - img.width) / 2), y: d.height - img.height }, selection: null, tool: 'move' });
+      notify(`Pasted image${note} · drag to place, Enter to drop`);
+    } catch (e) { fail(e); }
+  };
+  const pasteRef = useRef<(e: ClipboardEvent) => void>(() => {});
+  pasteRef.current = (e: ClipboardEvent) => {
+    if (!active || !started || sliceFiles) return;
+    if ((e.target as HTMLElement).closest?.('input, textarea, select')) return;
+    if (pasteTimer.current) { clearTimeout(pasteTimer.current); pasteTimer.current = null; }
+    const file = [...(e.clipboardData?.items ?? [])].find(i => i.type.startsWith('image/'))?.getAsFile();
+    const ours = e.clipboardData?.getData('text/plain') === CLIP_MARK;
+    e.preventDefault();
+    if (file && !ours) void pasteImage(file);
+    else pasteInternal();
+  };
+  useEffect(() => {
+    const l = (e: ClipboardEvent) => pasteRef.current(e);
+    window.addEventListener('paste', l);
+    return () => window.removeEventListener('paste', l);
+  }, []);
+
+  const loadReference = (blob: Blob, name: string) => {
+    const prev = ed.ref.current.reference;
+    if (prev) URL.revokeObjectURL(prev.url);
+    ed.set({ reference: { url: URL.createObjectURL(blob), name, opacity: prev?.opacity ?? 0.4, show: true, front: prev?.front ?? false } });
+    notify(`Reference: ${name} · drawn ${prev?.front ? 'over' : 'under'} the sprite, never saved into it`);
+  };
+  const pasteReference = async () => {
+    try {
+      for (const item of await navigator.clipboard.read()) {
+        const type = item.types.find(t => t.startsWith('image/'));
+        if (type) { loadReference(await item.getType(type), 'pasted image'); setMenu(null); return; }
+      }
+      notify('No image on the clipboard');
+    } catch { notify('The browser blocked clipboard access: use Load image instead'); }
+  };
+  const setRef = (patch: Partial<NonNullable<typeof state.reference>>) => ed.set(s => ({ reference: s.reference && { ...s.reference, ...patch } }));
+
+  // ---------- export ----------
+  const curTag = tagOf(doc, state.frame);
+  // what the GIF will contain: a missing tag falls back to every frame
+  const gifRange = gifOpts.range === 'tag' && !curTag ? 'all' : gifOpts.range === 'each' && !doc.tags.length ? 'all' : gifOpts.range;
+  const exportGif = () => {
+    ed.settle();
+    const d = ed.ref.current.doc;
+    if (gifRange === 'each') d.tags.forEach(tg => downloadGif(d, { from: tg.from, to: tg.to, name: tg.name }, gifOpts));
+    else if (gifRange === 'tag' && curTag) downloadGif(d, { from: curTag.from, to: curTag.to, name: curTag.name }, gifOpts);
+    else downloadGif(d, { from: 0, to: d.frames.length - 1 }, gifOpts);
+    setMenu(null);
   };
 
   // ---------- canvas menu ----------
@@ -306,7 +382,56 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
         <select className="compact" value={state.view.zoom} onChange={e => ed.set(s => ({ view: { ...s.view, zoom: +e.target.value, panX: 0, panY: 0 } }))} aria-label="Zoom">
           <option value={0}>Fit</option>{[1, 2, 3, 4, 6, 8, 12, 16, 24, 32].map(z => <option key={z} value={z}>{z}×</option>)}
         </select>
-        <button onClick={() => void downloadSheet(ed.ref.current.doc)} title="Download PNG sheet + JSON"><Icon name="download" /> Export</button>
+        <div className="ed-menu">
+          <button className={state.reference ? (menu === 'reference' ? 'active on-ref' : 'on-ref') : menu === 'reference' ? 'active' : ''} onClick={() => setMenu(m => (m === 'reference' ? null : 'reference'))} title="Trace over a reference image (a Gemini pose, a sketch)"><Icon name="reference" /> Reference</button>
+          {menu === 'reference' && (
+            <div className="ed-pop right">
+              <button className="ed-pop-item" onClick={() => refInput.current?.click()}><Icon name="upload" /> Load image…</button>
+              <button className="ed-pop-item" onClick={() => void pasteReference()}><Icon name="copy" /> Paste image from clipboard</button>
+              {state.reference ? (
+                <>
+                  <div className="ed-pop-title">{state.reference.name}</div>
+                  <label className="ed-opt">Opacity
+                    <input type="range" min={5} max={100} value={Math.round(state.reference.opacity * 100)} onChange={e => setRef({ opacity: +e.target.value / 100 })} aria-label="Reference opacity" />
+                    <span className="mono">{Math.round(state.reference.opacity * 100)}%</span>
+                  </label>
+                  <div className="seg compact" role="radiogroup" aria-label="Reference placement">
+                    <button role="radio" aria-checked={!state.reference.front} className={!state.reference.front ? 'active' : ''} onClick={() => setRef({ front: false })}>Behind sprite</button>
+                    <button role="radio" aria-checked={state.reference.front} className={state.reference.front ? 'active' : ''} onClick={() => setRef({ front: true })}>Over sprite</button>
+                  </div>
+                  <div className="btnrow compact-row">
+                    <button className="small" onClick={() => setRef({ show: !state.reference!.show })}><Icon name={state.reference.show ? 'eyeOff' : 'eye'} size={12} /> {state.reference.show ? 'Hide' : 'Show'}</button>
+                    <button className="small danger" onClick={() => { URL.revokeObjectURL(state.reference!.url); ed.set({ reference: null }); setMenu(null); }}><Icon name="trash" size={12} /> Remove</button>
+                  </div>
+                  <p className="dim small">Fitted to the canvas, standing on the bottom edge. Only for tracing: it's never saved into the sprite. The eyedropper next to the color can pick from it.</p>
+                </>
+              ) : <p className="dim small">Load a pose reference to trace over, frame by frame.</p>}
+            </div>
+          )}
+        </div>
+        <div className="ed-menu">
+          <button className={menu === 'export' ? 'active' : ''} onClick={() => setMenu(m => (m === 'export' ? null : 'export'))}><Icon name="download" /> Export</button>
+          {menu === 'export' && (
+            <div className="ed-pop right">
+              <button className="ed-pop-item" onClick={() => { void downloadSheet(ed.ref.current.doc); setMenu(null); }}><Icon name="grid" /> PNG sheet + JSON</button>
+              <button className="ed-pop-item" onClick={() => { void downloadFramePng(ed.ref.current.doc, state.frame, gifOpts.scale); setMenu(null); }}><Icon name="image" /> This frame as PNG ({gifOpts.scale}×)</button>
+              <div className="ed-pop-title">Animated GIF</div>
+              <div className="seg compact" role="radiogroup" aria-label="GIF frames">
+                <button role="radio" aria-checked={gifRange === 'tag'} className={gifRange === 'tag' ? 'active' : ''} onClick={() => setGifOpts({ ...gifOpts, range: 'tag' })} disabled={!curTag} title={curTag ? 'The tag the current frame is in' : 'This frame is not in a tag'}>{curTag?.name ?? 'Current tag'}</button>
+                <button role="radio" aria-checked={gifRange === 'all'} className={gifRange === 'all' ? 'active' : ''} onClick={() => setGifOpts({ ...gifOpts, range: 'all' })}>All frames</button>
+                <button role="radio" aria-checked={gifRange === 'each'} className={gifRange === 'each' ? 'active' : ''} onClick={() => setGifOpts({ ...gifOpts, range: 'each' })} disabled={!doc.tags.length} title="One GIF per tag">Each tag</button>
+              </div>
+              <div className="ed-row">
+                <span className="dim small">Scale</span>
+                <div className="seg compact" role="radiogroup" aria-label="Export scale">
+                  {[1, 2, 4, 8].map(s => <button key={s} role="radio" aria-checked={gifOpts.scale === s} className={gifOpts.scale === s ? 'active' : ''} onClick={() => setGifOpts({ ...gifOpts, scale: s })}>{s}×</button>)}
+                </div>
+                <label className="toggle small"><input type="checkbox" checked={gifOpts.loop} onChange={e => setGifOpts({ ...gifOpts, loop: e.target.checked })} /> loop</label>
+              </div>
+              <button className="primary small" onClick={exportGif}><Icon name="gif" /> Download {gifRange === 'each' ? `${doc.tags.length} GIFs` : 'GIF'} · {doc.width * gifOpts.scale}×{doc.height * gifOpts.scale}</button>
+            </div>
+          )}
+        </div>
         <button className="primary" onClick={() => void save()} disabled={saving} title="Save to the library (Ctrl+S)"><Icon name="save" /> {saving ? 'Saving…' : source ? 'Save' : 'Save to library'}</button>
       </header>
 
@@ -317,6 +442,7 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
           <Canvas ed={ed} onPickColor={(hex, sec) => ed.set(sec ? { secondary: hex } : { primary: hex })} />
         </div>
         <aside className="ed-side">
+          <Preview ed={ed} />
           <ColorPanel ed={ed} style={style} designs={designs} />
           <LayersPanel ed={ed} />
           <FrameTools ed={ed} notify={notify} />
@@ -325,6 +451,7 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
       <Timeline ed={ed} />
 
       <input ref={fileInput} type="file" multiple accept="image/*,video/*,.gif,.webp,.png,.jpg,.jpeg" hidden onChange={e => { const f = [...(e.target.files ?? [])]; if (f.length) setSliceFiles(f); e.target.value = ''; }} />
+      <input ref={refInput} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) { loadReference(f, f.name); setMenu(null); } e.target.value = ''; }} />
       {sliceFiles && <SlicerDialog files={sliceFiles} onCancel={() => setSliceFiles(null)} onError={e => { fail(e); setSliceFiles(null); }}
         onDone={d => { if (confirmDiscard()) { ed.open(d); notify(`${d.frames.length} frames ready`); } setSliceFiles(null); }} />}
       {menu && <div className="ed-pop-veil" onClick={() => setMenu(null)} />}

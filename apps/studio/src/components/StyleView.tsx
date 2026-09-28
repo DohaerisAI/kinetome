@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { countColors, StyleBible, type Project, type SpriteAsset } from '@kinetome/core';
 import { api } from '../api.ts';
 import { loadImage, toPixels } from '../pixels.ts';
+import { EyedropperButton } from './Eyedropper.tsx';
 
 interface Props {
   projectId: string;
@@ -65,6 +66,7 @@ export function StyleView({ projectId, project, style, assets, onSaved, onProjec
           </div>
           <div className="btnrow">
             <input type="color" value={newColor} onChange={e => setNewColor(e.target.value)} aria-label="New color" />
+            <EyedropperButton onPick={c => setNewColor(c)} title="Pick a color from anywhere on screen" />
             <button onClick={() => addColors([newColor])}>Add color</button>
             <select value="" onChange={e => fromAsset(e.target.value)} aria-label="Extract palette from asset">
               <option value="">Extract from asset…</option>

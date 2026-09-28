@@ -69,6 +69,10 @@ const paths: Record<string, string> = {
   save: 'M2.5 2.5h9l2 2v9h-11zM5 2.5v3.5h5V2.5M5 13.5v-4h6v4',
   tag: 'M2.5 2.5h5.5l6 6-5.5 5.5-6-6zM5.5 5.5h.01',
   swap: 'M3 5.5h9l-2.5-2.5M13 10.5H4l2.5 2.5',
+  shade: 'M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 2.5v11M8 5h3.8M8 8h5.5M8 11h3.8',
+  dither: 'M3 3h2v2H3zM7 3h2v2H7zM11 3h2v2h-2zM5 7h2v2H5zM9 7h2v2H9zM3 11h2v2H3zM7 11h2v2H7zM11 11h2v2h-2z',
+  reference: 'M2.5 3.5h11v9h-11zM2.5 10.5l3-3 3 3 2-2 3 3M6 3.5V2M10 3.5V2',
+  gif: 'M2.5 3.5h11v9h-11zM6.5 6.3H5.2v3.4h1.3V8.3M8.5 6.3v3.4M10.5 9.7V6.3h1.5M10.5 8h1.2',
   target: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zM8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM8 1v2M8 13v2M1 8h2M13 8h2',
 };
 

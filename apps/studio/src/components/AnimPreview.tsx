@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PixelImage } from '@kinetome/core';
 import { drawChecker } from '../pixels.ts';
+import { Icon } from '../icons.tsx';
 
 function toCanvas(f: PixelImage): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -11,14 +12,15 @@ function toCanvas(f: PixelImage): HTMLCanvasElement {
 
 /**
  * Plays frames in a fixed box. `pixel` = integer zoom + nearest sampling (results);
- * otherwise smooth fit (source footage).
+ * otherwise smooth fit (source footage). Starts paused on the first frame; click to play.
  */
-export function AnimPreview({ frames, fps, width, height, pixel = true, playing = true, onFrame }: {
+export function AnimPreview({ frames, fps, width, height, pixel = true, playing: initial = false, onFrame }: {
   frames: PixelImage[]; fps: number; width: number; height: number; pixel?: boolean; playing?: boolean; onFrame?: (i: number) => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [cache, setCache] = useState<HTMLCanvasElement[]>([]);
   const [i, setI] = useState(0);
+  const [playing, setPlaying] = useState(initial);
 
   useEffect(() => { setCache(frames.map(toCanvas)); setI(0); }, [frames]);
 
@@ -43,5 +45,17 @@ export function AnimPreview({ frames, fps, width, height, pixel = true, playing 
     ctx.drawImage(f, Math.floor((width - w) / 2), Math.floor((height - h) / 2), w, h);
   }, [cache, i, width, height, pixel]);
 
-  return <canvas ref={ref} width={width} height={height} style={{ width, height, imageRendering: pixel ? 'pixelated' : 'auto', borderRadius: 6 }} />;
+  const many = frames.length > 1;
+  return (
+    <div className="anim-preview" style={{ width, height }}>
+      <canvas ref={ref} width={width} height={height} style={{ width, height, imageRendering: pixel ? 'pixelated' : 'auto', borderRadius: 6 }}
+        onClick={() => many && setPlaying(p => !p)} />
+      {many && (
+        <button className={playing ? 'ap-play on' : 'ap-play'} onClick={() => setPlaying(p => !p)} aria-label={playing ? 'Pause' : 'Play'} title={playing ? 'Pause' : 'Play'}>
+          <Icon name={playing ? 'pause' : 'play'} size={12} />
+          {!playing && <span className="mono">{i % frames.length + 1}/{frames.length}</span>}
+        </button>
+      )}
+    </div>
+  );
 }

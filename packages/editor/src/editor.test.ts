@@ -178,3 +178,110 @@ test('background removal sees an opaque backdrop inside a transparent margin', (
   assert.equal(alphaAt(out, 4, 4), 0, 'green gone');
   assert.equal(alphaAt(out, 12, 12), 255, 'sprite kept');
 });
+
+// ---------- paint modifiers + GIF ----------
+import { applyDither, ditherAllows, encodeGif, shadeColor, shadeStroke } from './index.ts';
+
+test('dither: 50% is a checkerboard, applyDither keeps only pattern pixels of a stroke', () => {
+  assert.equal(ditherAllows(0, 0, 50), true);
+  assert.equal(ditherAllows(1, 0, 50), false);
+  assert.equal(ditherAllows(1, 1, 50), true);
+  const base = blank(8, 8), work = blank(8, 8);
+  drawRect(work, 0, 0, 7, 7, RED, true);
+  const out = applyDither(base, work, 50);
+  let n = 0;
+  for (let i = 3; i < out.data.length; i += 4) if (out.data[i]) n++;
+  assert.equal(n, 32);
+  assert.equal(applyDither(base, work, 0), work, 'off = unchanged');
+});
+
+test('shading: palette steps stay in the hue family; free shading hue-shifts', () => {
+  const pal = ['#2b1a12', '#7a4a2a', '#c8844e', '#f2c79a', '#0a0a20'];
+  assert.deepEqual(shadeColor([0x7a, 0x4a, 0x2a, 255], 1, pal), [0xc8, 0x84, 0x4e, 255]);
+  assert.deepEqual(shadeColor([0x7a, 0x4a, 0x2a, 255], -1, pal), [0x2b, 0x1a, 0x12, 255], 'darker skin, not the navy outline');
+  assert.deepEqual(shadeColor([0xf2, 0xc7, 0x9a, 255], 1, pal), [0xf2, 0xc7, 0x9a, 255], 'top of the ramp stays');
+  const dark = shadeColor([200, 60, 60, 255], -1);
+  assert.ok(dark[0] < 200 && dark[2] >= dark[1], 'darker and cooler');
+  // a stroke shades each pixel once even when it passes twice
+  const img = blank(4, 1);
+  for (let x = 0; x < 4; x++) img.data.set([0x7a, 0x4a, 0x2a, 255], x * 4);
+  const out = shadeStroke(img, [[1, 0], [2, 0], [1, 0]], 1, 1, pal);
+  assert.equal(out.data[4], 0xc8);
+  assert.equal(out.data[0], 0x7a);
+});
+
+/** Minimal GIF reader: enough to prove the encoder's LZW and layout are valid. */
+function decodeGif(b: Uint8Array) {
+  assert.equal(String.fromCharCode(...b.slice(0, 6)), 'GIF89a');
+  const W = b[6] | (b[7] << 8), H = b[8] | (b[9] << 8);
+  const size = 2 << (b[10] & 7);
+  const pal = b.slice(13, 13 + size * 3);
+  let p = 13 + size * 3;
+  const frames: { idx: number[]; delay: number }[] = [];
+  let delay = 0;
+  while (b[p] !== 0x3b) {
+    if (b[p] === 0x21) {
+      if (b[p + 1] === 0xf9) delay = b[p + 4] | (b[p + 5] << 8);
+      p += 2;
+      while (b[p]) p += b[p] + 1;
+      p++;
+      continue;
+    }
+    assert.equal(b[p], 0x2c);
+    p += 10;
+    const min = b[p++];
+    const data: number[] = [];
+    while (b[p]) { data.push(...b.slice(p + 1, p + 1 + b[p])); p += b[p] + 1; }
+    p++;
+    const clear = 1 << min, eoi = clear + 1;
+    let sz = min + 1, bit = 0, dict: number[][] = [], prev: number[] | null = null;
+    const reset = () => { dict = []; for (let i = 0; i < clear; i++) dict[i] = [i]; dict[clear] = []; dict[eoi] = []; sz = min + 1; prev = null; };
+    reset();
+    const out: number[] = [];
+    for (;;) {
+      let code = 0;
+      for (let i = 0; i < sz; i++, bit++) code |= ((data[bit >> 3] >> (bit & 7)) & 1) << i;
+      if (code === clear) { reset(); continue; }
+      if (code === eoi) break;
+      const entry: number[] = code < dict.length ? dict[code] : [...prev!, prev![0]];
+      out.push(...entry);
+      if (prev) dict.push([...prev, entry[0]]);
+      if (dict.length === (1 << sz) && sz < 12) sz++;
+      prev = entry;
+    }
+    frames.push({ idx: out, delay });
+  }
+  return { W, H, pal, frames };
+}
+
+test('gif: frames decode back to the same pixels, scaled, with delays and transparency', () => {
+  const a = blank(5, 4), b2 = blank(5, 4);
+  drawRect(a, 0, 0, 2, 2, RED, true);
+  drawLine(b2, 0, 3, 4, 0, [0, 90, 255, 255]);
+  const gif = encodeGif([a, b2], [100, 250], { scale: 2 });
+  const d = decodeGif(gif);
+  assert.equal(d.W, 10); assert.equal(d.H, 8);
+  assert.equal(d.frames.length, 2);
+  assert.deepEqual(d.frames.map(f => f.delay), [10, 25]);
+  for (const [k, src] of [a, b2].entries()) {
+    const f = d.frames[k];
+    assert.equal(f.idx.length, 80);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 10; x++) {
+      const i = ((y >> 1) * 5 + (x >> 1)) * 4, ix = f.idx[y * 10 + x];
+      if (!src.data[i + 3]) { assert.equal(ix, 0, 'transparent'); continue; }
+      assert.deepEqual([...d.pal.slice(ix * 3, ix * 3 + 3)], [src.data[i], src.data[i + 1], src.data[i + 2]]);
+    }
+  }
+  // a big noisy frame exercises code-size growth and the 4096 dictionary reset
+  const big = blank(120, 90);
+  for (let i = 0; i < big.data.length; i += 4) big.data.set([(i * 7) % 256 & 0xf0, (i * 13) % 256 & 0xe0, (i * 3) % 256 & 0xc0, 255], i);
+  const d2 = decodeGif(encodeGif([big], [80]));
+  const f = d2.frames[0];
+  for (let p = 0; p < 120 * 90; p += 97) {
+    const ix = f.idx[p];
+    const c = [...d2.pal.slice(ix * 3, ix * 3 + 3)];
+    const src = [...big.data.slice(p * 4, p * 4 + 3)];
+    assert.ok(Math.abs(c[0] - src[0]) + Math.abs(c[1] - src[1]) + Math.abs(c[2] - src[2]) < 90, `pixel ${p}`);
+  }
+  assert.equal(f.idx.length, 120 * 90);
+});

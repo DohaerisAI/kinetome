@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PixelImage } from '@kinetome/core';
+import { useImage } from '../pixels.ts';
 import {
-  blank, clearSelected, cloneImage, combine, composite, drawEllipse, drawLine, drawRect, editableCel, extract, fillMask,
+  applyDither, shadeStroke, blank, clearSelected, cloneImage, combine, composite, drawEllipse, drawLine, drawRect, editableCel, extract, fillMask,
   floatingMask, getCel, getPixel, hexToRgba, linePoints, matchRegion, pixelPerfect, polyMask, rectMask, rgbaToHex, shift,
   stamp, stampFloating, withCel, type EditorDoc, type Floating, type RGBA,
 } from './model.ts';
@@ -58,6 +59,7 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
   const gesture = useRef<Gesture | null>(null);
   const [, force] = useState(0);
   const redraw = useCallback(() => force(n => n + 1), []);
+  const refImg = useImage(state.reference?.url ?? null);
 
   useEffect(() => {
     const el = wrap.current;
@@ -114,6 +116,21 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
       }
     } else { ctx.fillStyle = view.bg === 'dark' ? '#14141c' : '#e9e7f1'; ctx.fillRect(ox, oy, W, H); }
 
+    // reference image: fitted inside the canvas, standing on the bottom edge like a sprite
+    const reference = state.reference;
+    const drawReference = () => {
+      if (!reference?.show || !refImg?.naturalWidth) return;
+      const s = Math.min(W / refImg.naturalWidth, H / refImg.naturalHeight);
+      const rw = refImg.naturalWidth * s, rh = refImg.naturalHeight * s;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(ox, oy, W, H); ctx.clip();
+      ctx.globalAlpha = reference.opacity;
+      ctx.imageSmoothingEnabled = s < 1;
+      ctx.drawImage(refImg, ox + (W - rw) / 2, oy + H - rh, rw, rh);
+      ctx.restore();
+    };
+    if (!reference?.front) drawReference();
+
     // onion skin
     const on = state.onion;
     if (on.on && !state.playing) {
@@ -140,6 +157,7 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     if (f && state.floating) shown = withCel(shown, layerId, f.id, stampFloating(g && g.tool === 'move' ? g.work : editableCel(shown, layerId, f.id), state.floating));
     const flat = composite(shown, frame);
     ctx.drawImage(toCanvas(flat), ox, oy, W, H);
+    if (reference?.front) drawReference();
 
     // palette lock: mark off-palette pixels
     if (state.paletteLock && doc.palette.length >= 2) {
@@ -204,7 +222,7 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
 
     // brush cursor
     const t = space ? 'hand' : state.tool;
-    if (hover && ['pencil', 'eraser', 'line', 'rect', 'ellipse'].includes(t)) {
+    if (hover && ['pencil', 'eraser', 'shade', 'line', 'rect', 'ellipse'].includes(t)) {
       const b = state.opts.brush, o = Math.floor((b - 1) / 2);
       ctx.strokeStyle = 'rgba(255,255,255,.8)';
       ctx.strokeRect(ox + (hover[0] - o) * z + 0.5, oy + (hover[1] - o) * z + 0.5, b * z - 1, b * z - 1);
@@ -232,8 +250,14 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
       const seg = i === 0 ? [g.points[0]] : linePoints(g.points[i - 1][0], g.points[i - 1][1], g.points[i][0], g.points[i][1]).slice(1);
       pts.push(...(seg as Pt[]));
     }
+    if (g.tool === 'shade') {
+      // each pixel under the stroke steps once: left = lighter, right = darker
+      g.work = shadeStroke(g.base, pts.flatMap(([x, y]) => mirrored(x, y)), s.opts.brush, g.button === 2 ? -1 : 1, s.doc.palette, mask);
+      return;
+    }
     if (s.opts.pixelPerfect && s.opts.brush === 1) pts = pixelPerfect(pts);
     for (const [x, y] of pts) for (const [mx, my] of mirrored(x, y)) stamp(g.work, mx, my, g.color, s.opts.brush, mask);
+    g.work = applyDither(g.base, g.work, s.opts.dither);
   };
 
   const shapePreview = (g: Gesture, shiftKey: boolean) => {
@@ -257,6 +281,7 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     if (g.tool === 'line') mirrorShape((a, b, c, d) => drawLine(g.work, a, b, c, d, g.color, s.opts.brush, mask));
     if (g.tool === 'rect') mirrorShape((a, b, c, d) => drawRect(g.work, a, b, c, d, g.color, s.opts.fillShapes, s.opts.brush, mask));
     if (g.tool === 'ellipse') mirrorShape((a, b, c, d) => drawEllipse(g.work, a, b, c, d, g.color, s.opts.fillShapes, s.opts.brush, mask));
+    g.work = applyDither(g.base, g.work, s.opts.dither);
   };
 
   const sampleImage = (s: EditorState) => (s.opts.sampleAll ? composite(s.doc, s.frame) : (getCel(s.doc, s.layerId, s.doc.frames[s.frame].id) ?? blank(s.doc.width, s.doc.height)));
@@ -270,7 +295,7 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     let tool = space || e.button === 1 ? 'hand' : s.tool;
     if (e.altKey && ['pencil', 'bucket', 'line', 'rect', 'ellipse'].includes(tool)) tool = 'picker';
     const layer = s.doc.layers.find(l => l.id === s.layerId);
-    const drawing = ['pencil', 'eraser', 'bucket', 'line', 'rect', 'ellipse', 'move'].includes(tool);
+    const drawing = ['pencil', 'eraser', 'shade', 'bucket', 'line', 'rect', 'ellipse', 'move'].includes(tool);
     if (drawing && (layer?.locked || !layer?.visible)) return;
     if (tool !== 'move' && s.floating) ed.settle();
 
@@ -284,7 +309,7 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     if (tool === 'hand') g.panStart = { x: e.clientX, y: e.clientY, px: s.view.panX, py: s.view.panY };
     gesture.current = g;
 
-    if (tool === 'pencil' || tool === 'eraser') paintStroke(g);
+    if (tool === 'pencil' || tool === 'eraser' || tool === 'shade') paintStroke(g);
     else if (tool === 'picker') {
       const c = getPixel(sampleImage({ ...s, opts: { ...s.opts, sampleAll: true } }), p[0], p[1]);
       if (c[3] > 0) onPickColor(rgbaToHex(c), secondary);
@@ -292,6 +317,7 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     } else if (tool === 'bucket') {
       const region = matchRegion(sampleImage(s), p[0], p[1], s.opts.tolerance, s.opts.contiguous);
       fillMask(g.work, region, color, s.selection?.mask ?? null);
+      g.work = applyDither(base, g.work, s.opts.dither);
       ed.commit('Fill', withCel(s.doc, s.layerId, f.id, g.work), { lastEdit: { layerId: s.layerId, frame: s.frame, before: base, after: g.work, label: 'Fill' } });
       gesture.current = null;
     } else if (tool === 'wand') {
@@ -322,7 +348,7 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     if (g.tool === 'hand' && g.panStart) { ed.set({ view: { ...s.view, panX: g.panStart.px + e.clientX - g.panStart.x, panY: g.panStart.py + e.clientY - g.panStart.y } }); return; }
     if (p[0] === g.last[0] && p[1] === g.last[1]) return;
     g.last = p;
-    if (g.tool === 'pencil' || g.tool === 'eraser') { g.points.push(p); paintStroke(g); }
+    if (g.tool === 'pencil' || g.tool === 'eraser' || g.tool === 'shade') { g.points.push(p); paintStroke(g); }
     else if (g.tool === 'line' || g.tool === 'rect' || g.tool === 'ellipse') shapePreview(g, e.shiftKey);
     else if (g.tool === 'lasso') g.points.push(p);
     else if (g.tool === 'move') {
@@ -340,7 +366,7 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     const s = ref.current;
     const f = s.doc.frames[s.frame];
     if (!f) return;
-    const label = { pencil: 'Draw', eraser: 'Erase', line: 'Line', rect: 'Rectangle', ellipse: 'Ellipse', move: 'Move' }[g.tool as string];
+    const label = { pencil: 'Draw', eraser: 'Erase', shade: 'Shade', line: 'Line', rect: 'Rectangle', ellipse: 'Ellipse', move: 'Move' }[g.tool as string];
     if (g.tool === 'select') {
       const click = g.start[0] === g.last[0] && g.start[1] === g.last[1];
       if (click && g.selectMode === 'replace') ed.set({ selection: null });

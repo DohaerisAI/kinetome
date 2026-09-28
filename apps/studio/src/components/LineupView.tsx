@@ -16,7 +16,7 @@ export function LineupView({ projectId, assets, style, paletteFor, onOpen }: {
 }) {
   const [loaded, setLoaded] = useState<Loaded[]>([]);
   const [onlyChars, setOnlyChars] = useState(false);
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(false);
   const [zoom, setZoom] = useState(0);
   const canvas = useRef<HTMLCanvasElement>(null);
 

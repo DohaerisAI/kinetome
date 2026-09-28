@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { rampFor } from '@kinetome/core';
+import { EyedropperButton } from './Eyedropper.tsx';
 
 type HSV = { h: number; s: number; v: number };
 
@@ -94,6 +95,7 @@ export function ColorWheel({ value, onChange, swatches = [] }: { value: string; 
         <span className="cw-chip" style={{ background: hex }} />
         <input className="mono" value={hex} spellCheck={false} aria-label="Hex color"
           onChange={e => { const v = e.target.value.trim(); setHex(v); if (/^#[0-9a-f]{6}$/i.test(v)) { setHsv(hexToHsv(v)); onChange(v.toLowerCase()); } }} />
+        <EyedropperButton onPick={c => { setHsv(hexToHsv(c)); setHex(c); onChange(c); }} />
       </div>
       {ramp && (
         <div className="cw-ramp" title="Pixel-art ramp: cool shadow, base, warm highlight">
