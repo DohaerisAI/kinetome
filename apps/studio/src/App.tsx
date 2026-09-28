@@ -16,6 +16,7 @@ import { LineupView } from './components/LineupView.tsx';
 import { StyleView } from './components/StyleView.tsx';
 import { useImage } from './pixels.ts';
 import { Home } from './components/Home.tsx';
+import { Playtest } from './components/Playtest.tsx';
 import { CommandPalette, type Command } from './components/CommandPalette.tsx';
 import { Orb } from './components/Orb.tsx';
 import { useClaudeActivity } from './claudeActivity.ts';
@@ -23,12 +24,13 @@ import { ProjectMenu } from './components/ProjectMenu.tsx';
 import { TrashDialog } from './components/TrashDialog.tsx';
 import { pop, slideTo, viewIn } from './motion.ts';
 
-type Tab = 'home' | 'library' | 'editor' | 'characters' | 'lineup' | 'style';
+type Tab = 'home' | 'library' | 'editor' | 'characters' | 'playtest' | 'lineup' | 'style';
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: 'home', label: 'Home', icon: 'home' },
   { id: 'library', label: 'Library', icon: 'layers' },
   { id: 'editor', label: 'Editor', icon: 'pencil' },
   { id: 'characters', label: 'Characters', icon: 'users' },
+  { id: 'playtest', label: 'Playtest', icon: 'gamepad' },
   { id: 'lineup', label: 'Lineup', icon: 'grid' },
   { id: 'style', label: 'Style Bible', icon: 'palette' },
 ];
@@ -431,6 +433,7 @@ export function App() {
           />
         </main>
       )}
+      {ready && pid && style && tab === 'playtest' && <Playtest projectId={pid} assets={assets} style={style} designs={designs} active={tab === 'playtest'} />}
       {ready && pid && style && tab === 'lineup' && (
         <LineupView projectId={pid} assets={assets} style={style} paletteFor={paletteFor}
           onOpen={id => { setSelectedId(id); setTab('library'); }} />

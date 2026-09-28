@@ -13,6 +13,23 @@ export const Animation = z.object({
 });
 export type Animation = z.infer<typeof Animation>;
 
+/** A box in frame pixels (top-left origin of the frame). */
+export const Box = z.object({ x: z.number().int(), y: z.number().int(), w: z.number().int().positive(), h: z.number().int().positive() });
+export type Box = z.infer<typeof Box>;
+
+/**
+ * Game data for one sheet frame: where it hurts (hitboxes: the attack), where it can be
+ * hurt (hurtboxes: the body), and named events that fire when the frame starts
+ * ("impact", "footstep", "spawn:slash"...). Exported to Godot as collision shapes and
+ * method tracks.
+ */
+export const FrameMeta = z.object({
+  hitboxes: z.array(Box).default([]),
+  hurtboxes: z.array(Box).default([]),
+  events: z.array(z.string().min(1)).default([]),
+});
+export type FrameMeta = z.infer<typeof FrameMeta>;
+
 export const AssetKind = z.enum(['character', 'prop', 'fx', 'tile', 'ui']);
 export type AssetKind = z.infer<typeof AssetKind>;
 
@@ -37,6 +54,8 @@ export const SpriteAsset = z.object({
   description: z.string().default(''),
   /** True when this asset is approved as a style reference for future generation. */
   reference: z.boolean().default(false),
+  /** Per sheet frame (key = frame index): hitboxes, hurtboxes and events. */
+  frameData: z.record(z.string(), FrameMeta).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
