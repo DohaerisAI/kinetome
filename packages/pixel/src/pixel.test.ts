@@ -260,3 +260,15 @@ test('grid mode re-samples a frame the generator drew too big', () => {
   const hs = r.frames.map(f => contentBounds(f, 128)!.h);
   assert.ok(Math.max(...hs) - Math.min(...hs) <= 1, `heights ${hs}`);
 });
+
+test('chroma spill: dark green fringe on the silhouette edge is removed, the sprite is not', () => {
+  const img = createImage(40, 40);
+  for (let i = 0; i < img.data.length; i += 4) img.data.set([0, 255, 0, 255], i);
+  for (let y = 10; y < 30; y++) for (let x = 12; x < 28; x++) img.data.set([120, 40, 160, 255], (y * 40 + x) * 4); // purple body
+  for (let y = 10; y < 30; y++) { img.data.set([0, 90, 10, 255], (y * 40 + 11) * 4); img.data.set([0, 90, 10, 255], (y * 40 + 28) * 4); } // dark green spill
+  const bg = estimateBackground(img)!;
+  const out = removeBackground(img, bg, 0.09, false);
+  assert.equal(out.data[(20 * 40 + 11) * 4 + 3], 0, 'spill removed');
+  assert.equal(out.data[(20 * 40 + 20) * 4 + 3], 255, 'body kept');
+  assert.equal(out.data[(20 * 40 + 12) * 4 + 3], 255, 'body edge kept');
+});

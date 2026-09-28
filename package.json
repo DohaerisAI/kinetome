@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -k -n server,studio -c magenta,cyan \"npm run dev -w @kinetome/server\" \"npm run dev -w @kinetome/studio\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm test -w @kinetome/core -w @kinetome/pixel"
+    "test": "npm test -w @kinetome/core -w @kinetome/pixel -w @kinetome/editor"
   },
   "devDependencies": { "concurrently": "^9.2.0" }
 }

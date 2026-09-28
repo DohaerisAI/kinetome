@@ -65,6 +65,20 @@ app.get('/projects/:p/assets/:a/sheet.png', async c => {
   return c.body(buf, 200, { 'content-type': 'image/png', 'cache-control': 'no-cache' });
 });
 
+app.get('/projects/:p/assets/:a/edit', async c => c.json(await store.getEditMeta(c.req.param('p'), c.req.param('a'))));
+app.get('/projects/:p/assets/:a/edit.png', async c => {
+  const buf = await readFile(store.editPngPath(c.req.param('p'), c.req.param('a'))).catch(() => null);
+  if (!buf) throw new store.HttpError(404, 'not found');
+  return c.body(buf, 200, { 'content-type': 'image/png', 'cache-control': 'no-cache' });
+});
+app.put('/projects/:p/assets/:a/edit', async c => {
+  const form = await c.req.formData();
+  const meta = form.get('meta'), image = form.get('image');
+  if (typeof meta !== 'string' || !(image instanceof File)) throw new store.HttpError(400, 'meta and image required');
+  await store.saveEdit(c.req.param('p'), c.req.param('a'), JSON.parse(meta), new Uint8Array(await image.arrayBuffer()));
+  return c.body(null, 204);
+});
+
 app.route('/', characters);
 
 const port = Number(process.env.PORT ?? 4317);

@@ -16,9 +16,10 @@ interface Props {
   extraPalette: string[];
   godotZipUrl: string | null;
   onSyncGodot: (() => void) | null;
+  onEdit: (() => void) | null;
 }
 
-export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelete, extraPalette, godotZipUrl, onSyncGodot }: Props) {
+export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelete, extraPalette, godotZipUrl, onSyncGodot, onEdit }: Props) {
   const pixels = usePixels(img);
   const effStyle = useMemo(() => (extraPalette.length ? { ...style, palette: [...new Set([...style.palette, ...extraPalette])] } : style), [style, extraPalette]);
   const report = useMemo(() => (asset && pixels ? lintAsset(pixels, asset, effStyle) : null), [asset, pixels, effStyle]);
@@ -81,6 +82,7 @@ export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelet
     <aside className="panel inspector">
       <div className="panel-title">Inspector</div>
       <div className="scroll pad">
+        {onEdit && <button className="primary block-btn" onClick={onEdit}>Edit in the sprite editor</button>}
         <label className="field">
           <span>Name</span>
           <input key={asset.id + asset.name} defaultValue={asset.name}

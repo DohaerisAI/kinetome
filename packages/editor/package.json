@@ -1,0 +1,13 @@
+{
+  "name": "@kinetome/editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "node --import tsx --test src/*.test.ts"
+  },
+  "dependencies": { "@kinetome/core": "*", "@kinetome/pixel": "*" },
+  "devDependencies": { "typescript": "^5.9.0", "tsx": "^4.20.0", "@types/node": "^22.0.0" }
+}

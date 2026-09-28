@@ -240,3 +240,17 @@ export async function deleteCharacter(p: string, c: string): Promise<void> {
   await getCharacter(p, c);
   await rm(charPath(p, c));
 }
+
+// ---------- layered editor documents (next to the flattened sheet) ----------
+
+export async function saveEdit(p: string, a: string, meta: unknown, png: Uint8Array): Promise<void> {
+  await getAsset(p, a);
+  await writeFile(join(assetDir(p, a), 'edit.png'), png);
+  await writeJson(join(assetDir(p, a), 'edit.json'), meta);
+}
+
+export async function getEditMeta(p: string, a: string): Promise<unknown> {
+  return readJson(join(assetDir(p, a), 'edit.json'));
+}
+
+export const editPngPath = (p: string, a: string) => join(assetDir(p, a), 'edit.png');

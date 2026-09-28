@@ -115,6 +115,32 @@ export function removeBackground(img: PixelImage, bg: Background, tolerance = 0.
     if (touches && dist(p) <= tolerance * 2) fringe.push(p);
   }
   for (const p of fringe) removed[p] = 1;
+
+  // Spill: on chroma backdrops, edge pixels that share the backdrop's HUE (any brightness:
+  // JPEG and resampling mix green into dark outlines) are backdrop too. Two rings deep.
+  if (bg.colors.every(isChroma)) {
+    const [, ba, bb] = bgLab[0];
+    const bgAng = Math.atan2(bb, ba);
+    const spill = (p: number) => {
+      const i = p * 4;
+      const [, a, b] = lab.get(data[i], data[i + 1], data[i + 2]);
+      const c = Math.hypot(a, b);
+      if (c < 0.06) return false;
+      let d = Math.abs(Math.atan2(b, a) - bgAng);
+      if (d > Math.PI) d = 2 * Math.PI - d;
+      return d < (22 * Math.PI) / 180;
+    };
+    for (let ring = 0; ring < 2; ring++) {
+      const eat: number[] = [];
+      for (let p = 0; p < W * H; p++) {
+        if (removed[p]) continue;
+        const x = p % W, y = (p - x) / W;
+        const touches = (x > 0 && removed[p - 1]) || (x < W - 1 && removed[p + 1]) || (y > 0 && removed[p - W]) || (y < H - 1 && removed[p + W]);
+        if (touches && spill(p)) eat.push(p);
+      }
+      for (const p of eat) removed[p] = 1;
+    }
+  }
   for (let p = 0; p < W * H; p++) if (removed[p]) data[p * 4 + 3] = 0;
   return out;
 }

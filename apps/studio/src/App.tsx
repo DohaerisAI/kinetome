@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { designPalette, type CharacterDesign, type Project, type SpriteAsset, type StyleBible } from '@kinetome/core';
 import { api, type AssetDraft, type Model, type Usage } from './api.ts';
 import { CharactersView } from './components/characters/CharactersView.tsx';
+import { EditorView } from './editor/EditorView.tsx';
 import type { ImportRequest } from './components/characters/shared.tsx';
 import { fmtTokens } from './components/characters/shared.tsx';
 import { Icon, type IconName } from './icons.tsx';
@@ -15,9 +16,10 @@ import { LineupView } from './components/LineupView.tsx';
 import { StyleView } from './components/StyleView.tsx';
 import { useImage } from './pixels.ts';
 
-type Tab = 'library' | 'characters' | 'lineup' | 'style';
+type Tab = 'library' | 'editor' | 'characters' | 'lineup' | 'style';
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: 'library', label: 'Library', icon: 'layers' },
+  { id: 'editor', label: 'Editor', icon: 'pencil' },
   { id: 'characters', label: 'Characters', icon: 'users' },
   { id: 'lineup', label: 'Lineup', icon: 'grid' },
   { id: 'style', label: 'Style Bible', icon: 'palette' },
@@ -77,6 +79,7 @@ export function App() {
   const [claude, setClaude] = useState<{ available: boolean; version: string | null; error?: string } | null>(null);
   const [sessionUsage, setSessionUsage] = useState({ tokens: 0, calls: 0 });
   const [designs, setDesigns] = useState<CharacterDesign[]>([]);
+  const [editRequest, setEditRequest] = useState<{ assetId: string; nonce: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -300,12 +303,21 @@ export function App() {
             onAnim={setAnimName} onSave={saveAsset} onDelete={removeAsset}
             godotZipUrl={selected ? api.godotZipUrl(pid, selected.id) : null}
             onSyncGodot={project?.godot.path && selected ? () => syncGodot(selected.id) : null}
+            onEdit={selected ? () => { setEditRequest({ assetId: selected.id, nonce: Date.now() }); setTab('editor'); } : null}
           />
         </main>
       )}
       {pid && style && tab === 'lineup' && (
         <LineupView projectId={pid} assets={assets} style={style} paletteFor={paletteFor}
           onOpen={id => { setSelectedId(id); setTab('library'); }} />
+      )}
+      {pid && style && (
+        // kept mounted so switching tabs never loses unsaved editor work
+        <div className="tab-host" hidden={tab !== 'editor'}>
+          <EditorView projectId={pid} assets={assets} style={style} designs={designs} openRequest={editRequest} active={tab === 'editor'}
+            onSaved={a => { setAssets(list => (list.some(x => x.id === a.id) ? list.map(x => (x.id === a.id ? a : x)) : [...list, a])); setSelectedId(a.id); }}
+            notify={notify} fail={fail} />
+        </div>
       )}
       {pid && style && tab === 'characters' && (
         <CharactersView projectId={pid} style={style} assets={assets} model={model} onUsage={onUsage}
