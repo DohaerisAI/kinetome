@@ -3,6 +3,8 @@ import {
   AssetKind, downscale, hardenAlpha, lintAsset, snapToPalette, type FixId, type SpriteAsset, type StyleBible,
 } from '@kinetome/core';
 import { canvasToPng, download, pixelsToCanvas, usePixels } from '../pixels.ts';
+import { Icon, type IconName } from '../icons.tsx';
+import { History } from './History.tsx';
 
 interface Props {
   asset: SpriteAsset | null;
@@ -17,9 +19,17 @@ interface Props {
   godotZipUrl: string | null;
   onSyncGodot: (() => void) | null;
   onEdit: (() => void) | null;
+  projectId: string;
+  onRestored: (a: SpriteAsset) => void;
+  fail: (e: unknown) => void;
+  /** Extra tabs (variants, lighting, export…) rendered by their own components. */
+  extraTabs?: { id: string; label: string; icon: IconName; render: () => React.ReactNode }[];
 }
 
-export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelete, extraPalette, godotZipUrl, onSyncGodot, onEdit }: Props) {
+type TabId = 'details' | 'history' | string;
+
+export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelete, extraPalette, godotZipUrl, onSyncGodot, onEdit, projectId, onRestored, fail, extraTabs = [] }: Props) {
+  const [tab, setTab] = useState<TabId>('details');
   const pixels = usePixels(img);
   const effStyle = useMemo(() => (extraPalette.length ? { ...style, palette: [...new Set([...style.palette, ...extraPalette])] } : style), [style, extraPalette]);
   const report = useMemo(() => (asset && pixels ? lintAsset(pixels, asset, effStyle) : null), [asset, pixels, effStyle]);
@@ -80,9 +90,18 @@ export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelet
 
   return (
     <aside className="panel inspector">
-      <div className="panel-title">Inspector</div>
-      <div className="scroll pad">
-        {onEdit && <button className="primary block-btn" onClick={onEdit}>Edit in the sprite editor</button>}
+      <div className="panel-title">{asset.name}</div>
+      <div className="insp-tabs" role="tablist">
+        {[{ id: 'details', label: 'Details', icon: 'info' as IconName }, { id: 'history', label: 'History', icon: 'undo' as IconName }, ...extraTabs].map(t => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'insp-tab on' : 'insp-tab'} onClick={() => setTab(t.id)} title={t.label}>
+            <Icon name={t.icon} size={14} /><span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+      {tab === 'history' && <div className="scroll pad"><History projectId={projectId} asset={asset} onRestored={onRestored} fail={fail} /></div>}
+      {extraTabs.map(t => tab === t.id && <div key={t.id} className="scroll pad">{t.render()}</div>)}
+      {tab === 'details' && <div className="scroll pad">
+        {onEdit && <button className="primary block-btn" onClick={onEdit}><Icon name="pencil" /> Edit in the sprite editor</button>}
         <label className="field">
           <span>Name</span>
           <input key={asset.id + asset.name} defaultValue={asset.name}
@@ -159,9 +178,9 @@ export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelet
         <h3>Asset</h3>
         <div className="btnrow">
           <button onClick={exportAsset}>Export PNG + JSON</button>
-          <button className="danger" onClick={() => onDelete(asset.id)}>Delete</button>
+          <button className="danger" onClick={() => onDelete(asset.id)}><Icon name="trash" size={14} /> Move to trash</button>
         </div>
-      </div>
+      </div>}
     </aside>
   );
 }

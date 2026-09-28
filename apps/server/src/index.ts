@@ -31,6 +31,27 @@ app.post('/projects', async c => {
   return c.json(await store.createProject(name.trim()), 201);
 });
 app.get('/projects/:p', async c => c.json(await store.getProject(c.req.param('p'))));
+app.patch('/projects/:p', async c => {
+  const { name } = await c.req.json<{ name?: string }>();
+  if (!name?.trim()) throw new store.HttpError(400, 'name required');
+  return c.json(await store.renameProject(c.req.param('p'), name));
+});
+app.post('/projects/:p/duplicate', async c => {
+  const { name } = await c.req.json<{ name?: string }>().catch(() => ({ name: undefined }));
+  return c.json(await store.duplicateProject(c.req.param('p'), name), 201);
+});
+app.delete('/projects/:p', async c => { await store.deleteProject(c.req.param('p')); return c.body(null, 204); });
+
+// trash: everything deleted lands here for 30 days
+app.get('/trash', async c => c.json(await store.listTrash(c.req.query('project') || undefined)));
+app.post('/trash/:id/restore', async c => c.json(await store.restoreTrash(c.req.param('id'))));
+app.delete('/trash/:id', async c => { await store.purgeTrash(c.req.param('id')); return c.body(null, 204); });
+app.delete('/trash', async c => { await store.purgeTrash(); return c.body(null, 204); });
+app.get('/trash/:id/sheet.png', async c => {
+  const buf = await readFile(`${store.trashItemPath(c.req.param('id'))}/sheet.png`).catch(() => null);
+  if (!buf) throw new store.HttpError(404, 'not found');
+  return c.body(buf, 200, { 'content-type': 'image/png' });
+});
 app.put('/projects/:p/style', async c => c.json(await store.saveStyle(c.req.param('p'), await c.req.json())));
 
 app.put('/projects/:p/godot', async c => c.json(await store.saveGodotSettings(c.req.param('p'), await c.req.json())));
@@ -64,6 +85,16 @@ app.get('/projects/:p/assets/:a/sheet.png', async c => {
   if (!buf) throw new store.HttpError(404, 'not found');
   return c.body(buf, 200, { 'content-type': 'image/png', 'cache-control': 'no-cache' });
 });
+
+// version history
+app.get('/projects/:p/assets/:a/versions', async c => c.json(await store.listVersions(c.req.param('p'), c.req.param('a'))));
+app.get('/projects/:p/assets/:a/versions/:v', async c => c.json(await store.getVersion(c.req.param('p'), c.req.param('a'), c.req.param('v'))));
+app.get('/projects/:p/assets/:a/versions/:v/sheet.png', async c => {
+  const buf = await readFile(store.versionSheetPath(c.req.param('p'), c.req.param('a'), c.req.param('v'))).catch(() => null);
+  if (!buf) throw new store.HttpError(404, 'not found');
+  return c.body(buf, 200, { 'content-type': 'image/png', 'cache-control': 'max-age=31536000, immutable' });
+});
+app.post('/projects/:p/assets/:a/versions/:v/restore', async c => c.json(await store.restoreVersion(c.req.param('p'), c.req.param('a'), c.req.param('v'))));
 
 app.get('/projects/:p/assets/:a/edit', async c => c.json(await store.getEditMeta(c.req.param('p'), c.req.param('a'))));
 app.get('/projects/:p/assets/:a/edit.png', async c => {

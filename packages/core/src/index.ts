@@ -8,3 +8,6 @@ export * from './zip.ts';
 export * from './prompts.ts';
 export * from './design.ts';
 export * from './program.ts';
+export * from './tileset.ts';
+export * from './atlas.ts';
+export * from './variants.ts';

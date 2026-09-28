@@ -23,7 +23,7 @@ export interface TabProps {
   busy: string | null;
   importFor: (req: Omit<ImportRequest, 'design' | 'onDone'>) => void;
   onAssetsChanged: () => void;
-  notify: (msg: string) => void;
+  notify: (msg: string, action?: { label: string; run: () => void }) => void;
   fail: (e: unknown) => void;
 }
 

@@ -19,6 +19,8 @@ import { Home } from './components/Home.tsx';
 import { CommandPalette, type Command } from './components/CommandPalette.tsx';
 import { Orb } from './components/Orb.tsx';
 import { useClaudeActivity } from './claudeActivity.ts';
+import { ProjectMenu } from './components/ProjectMenu.tsx';
+import { TrashDialog } from './components/TrashDialog.tsx';
 import { pop, slideTo, viewIn } from './motion.ts';
 
 type Tab = 'home' | 'library' | 'editor' | 'characters' | 'lineup' | 'style';
@@ -73,6 +75,8 @@ export function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [style, setStyle] = useState<StyleBible | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeAction, setNoticeAction] = useState<{ label: string; run: () => void } | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
   const [assets, setAssets] = useState<SpriteAsset[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [animName, setAnimName] = useState<string | null>(null);
@@ -98,13 +102,14 @@ export function App() {
   const pixelInput = useRef<HTMLInputElement>(null);
 
   const fail = useCallback((e: unknown) => setError(e instanceof Error ? e.message : String(e)), []);
-  const notify = useCallback((msg: string) => setNotice(msg), []);
+  /** A toast; with an action ("Undo") it stays a little longer so there's time to click. */
+  const notify = useCallback((msg: string, action?: { label: string; run: () => void }) => { setNotice(msg); setNoticeAction(action ?? null); }, []);
 
   useEffect(() => {
     if (!notice) return;
-    const t = setTimeout(() => setNotice(null), 4500);
+    const t = setTimeout(() => { setNotice(null); setNoticeAction(null); }, noticeAction ? 8000 : 4500);
     return () => clearTimeout(t);
-  }, [notice]);
+  }, [notice, noticeAction]);
 
   // the nav pill slides to the active tab; each view eases in
   useLayoutEffect(() => {
@@ -144,6 +149,8 @@ export function App() {
     if (!pid) return;
     writeLast(pid);
     setSelectedId(null);
+    // drop the previous project's lists right away, so nothing asks this project for them
+    setAssets([]); setDesigns([]); setStyle(null); setProject(null);
     Promise.all([api.getProject(pid), api.listAssets(pid)]).then(([p, list]) => {
       setProject(p.project);
       setStyle(p.style);
@@ -161,8 +168,10 @@ export function App() {
     return d ? designPalette(d) : [];
   }, [designs]);
 
+  // views render only once the selected project has actually loaded (no stale lists)
+  const ready = !!pid && project?.id === pid;
   const selected = assets.find(a => a.id === selectedId) ?? null;
-  const img = useImage(pid && selected ? api.sheetUrl(pid, selected) : null);
+  const img = useImage(ready && pid && selected ? api.sheetUrl(pid, selected) : null);
 
   useEffect(() => {
     setAnimName(selected?.animations[0]?.name ?? null);
@@ -187,12 +196,57 @@ export function App() {
     } catch (e) { fail(e); return false; }
   };
 
+  /** Straight to the trash, no confirm: the toast's Undo (or the Trash) brings it back. */
   const removeAsset = async (id: string) => {
-    if (!pid || !confirm(`Delete "${id}"? This removes its files from the project.`)) return;
+    if (!pid) return;
+    const name = assets.find(a => a.id === id)?.name ?? id;
     try {
       await api.deleteAsset(pid, id);
       setAssets(list => list.filter(a => a.id !== id));
       setSelectedId(null);
+      notify(`Moved “${name}” to the trash`, { label: 'Undo', run: () => void undoDelete('asset', id) });
+    } catch (e) { fail(e); }
+  };
+
+  const undoDelete = async (kind: 'asset' | 'character' | 'project', itemId: string) => {
+    try {
+      const entry = (await api.listTrash()).find(e => e.kind === kind && e.itemId === itemId);
+      if (!entry) return;
+      afterRestore(await api.restoreTrash(entry.id));
+    } catch (e) { fail(e); }
+  };
+
+  const afterRestore = (r: { kind: string; projectId: string; restoredId: string; name: string }) => {
+    if (r.kind === 'project') { api.listProjects().then(ps => { setProjects(ps); setPid(r.restoredId); }, fail); }
+    else if (r.projectId === pid) { refreshAssets(); if (r.kind === 'character') setDesigns([]); if (r.kind === 'asset') setSelectedId(r.restoredId); }
+    notify(`Restored “${r.name}”`);
+  };
+
+  const renameProject = async () => {
+    if (!pid || !project) return;
+    const name = prompt('Rename project', project.name);
+    if (!name?.trim() || name.trim() === project.name) return;
+    try {
+      const p = await api.renameProject(pid, name.trim());
+      setProject(p); setProjects(ps => ps.map(x => (x.id === p.id ? p : x)));
+    } catch (e) { fail(e); }
+  };
+  const duplicateProject = async () => {
+    if (!pid) return;
+    try {
+      const p = await api.duplicateProject(pid);
+      setProjects(ps => [...ps, p]); setPid(p.id);
+      notify(`Duplicated as “${p.name}”`);
+    } catch (e) { fail(e); }
+  };
+  const deleteProject = async () => {
+    if (!pid || !project || !confirm(`Delete the project “${project.name}”? It moves to the trash with everything in it, and can be restored for 30 days.`)) return;
+    const id = pid;
+    try {
+      await api.deleteProject(id);
+      const ps = await api.listProjects();
+      setProjects(ps); setPid(ps[0]?.id ?? null); setProject(null); setAssets([]);
+      notify(`Moved “${project.name}” to the trash`, { label: 'Undo', run: () => void undoDelete('project', id) });
     } catch (e) { fail(e); }
   };
 
@@ -283,6 +337,12 @@ export function App() {
     ...TABS.map(t => ({ id: `tab-${t.id}`, label: `Go to ${t.label}`, group: 'Navigate', icon: t.icon, run: () => setTab(t.id) })),
     { id: 'import', label: 'Import art…', group: 'Actions', icon: 'upload' as IconName, keywords: 'sprite sheet gif video image pixelize', run: () => fileInput.current?.click() },
     { id: 'new-project', label: 'New project…', group: 'Actions', icon: 'plus' as IconName, run: () => void newProject() },
+    { id: 'trash', label: 'Open the trash', group: 'Actions', icon: 'trash' as IconName, keywords: 'restore deleted undo', run: () => setTrashOpen(true) },
+    ...(pid ? [
+      { id: 'rename-project', label: 'Rename this project…', group: 'Project', icon: 'pencil' as IconName, run: () => void renameProject() },
+      { id: 'dup-project', label: 'Duplicate this project', group: 'Project', icon: 'duplicate' as IconName, run: () => void duplicateProject() },
+      { id: 'del-project', label: 'Delete this project…', group: 'Project', icon: 'trash' as IconName, run: () => void deleteProject() },
+    ] : []),
     ...(pid ? [{ id: 'godot-zip', label: 'Download everything for Godot (.zip)', group: 'Actions', icon: 'download' as IconName, keywords: 'export', run: () => { location.href = api.godotZipUrl(pid); } }] : []),
     ...(project?.godot.path ? [{ id: 'godot-sync', label: 'Sync all sprites to Godot', group: 'Actions', icon: 'refresh' as IconName, run: () => void syncGodot() }] : []),
     ...assets.flatMap(a => [
@@ -309,14 +369,8 @@ export function App() {
     >
       <header className="topbar">
         <button className="brand" onClick={() => setTab('home')} aria-label="Kinetome home"><span className="brand-mark" aria-hidden /><span className="brand-word">Kinetome</span></button>
-        <div className="project-switch">
-          <Icon name="folder" size={14} />
-          <select value={pid ?? ''} onChange={e => { if (e.target.value === '__new') void newProject(); else setPid(e.target.value); }} aria-label="Project">
-            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            <option value="__new">+ New project…</option>
-          </select>
-          <Icon name="chevronDown" size={12} />
-        </div>
+        <ProjectMenu projects={projects} current={project} onSwitch={setPid} onNew={() => void newProject()}
+          onRename={() => void renameProject()} onDuplicate={() => void duplicateProject()} onDelete={() => void deleteProject()} onTrash={() => setTrashOpen(true)} />
         <nav className="tabs" role="tablist" ref={navRef}>
           <span className="tab-indicator" ref={indicator} aria-hidden />
           {TABS.map(t => (
@@ -350,14 +404,19 @@ export function App() {
       </header>
 
       {error && <div className="toast" ref={toastRef} role="alert" onClick={() => setError(null)}><span className="toast-ic"><Icon name="alert" /></span> <span>{error}</span> <span className="dim small">click to dismiss</span></div>}
-      {notice && !error && <div className="toast ok" ref={toastRef} role="status" onClick={() => setNotice(null)}><span className="toast-ic"><Icon name="check" /></span> <span>{notice}</span></div>}
+      {notice && !error && (
+        <div className="toast ok" ref={toastRef} role="status" onClick={() => { setNotice(null); setNoticeAction(null); }}>
+          <span className="toast-ic"><Icon name="check" /></span> <span>{notice}</span>
+          {noticeAction && <button className="toast-action" onClick={e => { e.stopPropagation(); const a = noticeAction; setNotice(null); setNoticeAction(null); a.run(); }}>{noticeAction.label}</button>}
+        </div>
+      )}
 
-      {pid && style && tab === 'home' && (
+      {ready && pid && style && tab === 'home' && (
         <Home project={project} style={style} assets={assets} designs={designs} projectId={pid}
           onGo={t => setTab(t)} onOpenAsset={openAsset} onEditAsset={editAsset} onImport={() => fileInput.current?.click()} onPalette={() => setPalette(true)} />
       )}
 
-      {pid && style && tab === 'library' && (
+      {ready && pid && style && tab === 'library' && (
         <main className="library">
           <AssetList projectId={pid} assets={assets} selectedId={selectedId} onSelect={setSelectedId} />
           <Viewer asset={selected} img={img} animName={animName} onAnim={setAnimName} />
@@ -367,26 +426,28 @@ export function App() {
             godotZipUrl={selected ? api.godotZipUrl(pid, selected.id) : null}
             onSyncGodot={project?.godot.path && selected ? () => syncGodot(selected.id) : null}
             onEdit={selected ? () => editAsset(selected.id) : null}
+            projectId={pid} fail={fail}
+            onRestored={a => { replaceAsset(a); notify(`Restored an earlier version of ${a.name}`); }}
           />
         </main>
       )}
-      {pid && style && tab === 'lineup' && (
+      {ready && pid && style && tab === 'lineup' && (
         <LineupView projectId={pid} assets={assets} style={style} paletteFor={paletteFor}
           onOpen={id => { setSelectedId(id); setTab('library'); }} />
       )}
       {pid && style && (
         // kept mounted so switching tabs never loses unsaved editor work
         <div className="tab-host" hidden={tab !== 'editor'}>
-          <EditorView projectId={pid} assets={assets} style={style} designs={designs} openRequest={editRequest} active={tab === 'editor'}
+          <EditorView projectId={pid} assets={ready ? assets : []} style={style} designs={designs} openRequest={editRequest} active={tab === 'editor'}
             onSaved={a => { setAssets(list => (list.some(x => x.id === a.id) ? list.map(x => (x.id === a.id ? a : x)) : [...list, a])); setSelectedId(a.id); }}
             notify={notify} fail={fail} />
         </div>
       )}
-      {pid && style && tab === 'characters' && (
+      {ready && pid && style && tab === 'characters' && (
         <CharactersView projectId={pid} style={style} assets={assets} model={model} onUsage={onUsage}
           onImport={importForCharacter} onAssetsChanged={refreshAssets} notify={notify} fail={fail} />
       )}
-      {pid && style && tab === 'style' && (
+      {ready && pid && style && tab === 'style' && (
         <StyleView projectId={pid} project={project} style={style} assets={assets}
           onSaved={setStyle} onProject={setProject} onError={fail} />
       )}
@@ -411,6 +472,7 @@ export function App() {
           onCancel={() => { pendingImport.current = null; setPixelizeFiles(null); }} onCreate={importPixelized} onMerge={mergePixelized} onError={fail} />
       )}
       {dragging && <div className="dropveil"><div className="dropveil-card"><Icon name="upload" size={28} /><strong>Drop to import</strong><span className="dim">Sprite sheets, images, GIFs or videos</span></div></div>}
+      {trashOpen && <TrashDialog projectId={pid} projectName={id => projects.find(p => p.id === id)?.name ?? id} onClose={() => setTrashOpen(false)} onRestored={afterRestore} fail={fail} />}
       {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
     </div>
   );

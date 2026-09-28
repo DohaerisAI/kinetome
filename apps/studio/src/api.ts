@@ -37,6 +37,11 @@ async function readStream(url: string, body: unknown, onEvent: (e: CodeEvent) =>
   }
 }
 
+export type TrashKind = 'asset' | 'character' | 'project';
+export interface TrashEntry { id: string; kind: TrashKind; projectId: string; itemId: string; name: string; deletedAt: string }
+export interface AssetVersion { id: string; savedAt: string; note: string; frames: number; animations: string[]; name: string }
+export interface ProgramVersion { id: string; move: string; savedAt: string; code: string }
+
 export type AssetDraft = Omit<SpriteAsset, 'version' | 'id' | 'image' | 'createdAt' | 'updatedAt'>;
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -99,5 +104,20 @@ export const api = {
   },
   deleteMoveRef: (p: string, id: string, move: string, file: string) => call<CharacterDesign>(`/projects/${p}/characters/${id}/moves/${move}/refs/${file}`, { method: 'DELETE' }),
   moveRefUrl: (p: string, id: string, move: string, file: string) => `/api/projects/${p}/characters/${id}/moves/${move}/refs/${file}`,
+  // projects
+  renameProject: (p: string, name: string) => call<Project>(`/projects/${p}`, { ...json({ name }), method: 'PATCH' }),
+  duplicateProject: (p: string, name?: string) => call<Project>(`/projects/${p}/duplicate`, json({ name })),
+  deleteProject: (p: string) => call<void>(`/projects/${p}`, { method: 'DELETE' }),
+  // trash
+  listTrash: (p?: string) => call<TrashEntry[]>(`/trash${p ? `?project=${p}` : ''}`),
+  restoreTrash: (id: string) => call<TrashEntry & { restoredId: string }>(`/trash/${id}/restore`, { method: 'POST' }),
+  purgeTrash: (id?: string) => call<void>(id ? `/trash/${id}` : '/trash', { method: 'DELETE' }),
+  trashThumbUrl: (id: string) => `/api/trash/${id}/sheet.png`,
+  // version history
+  listVersions: (p: string, a: string) => call<AssetVersion[]>(`/projects/${p}/assets/${a}/versions`),
+  getVersion: (p: string, a: string, v: string) => call<SpriteAsset>(`/projects/${p}/assets/${a}/versions/${v}`),
+  versionSheetUrl: (p: string, a: string, v: string) => `/api/projects/${p}/assets/${a}/versions/${v}/sheet.png`,
+  restoreVersion: (p: string, a: string, v: string) => call<SpriteAsset>(`/projects/${p}/assets/${a}/versions/${v}/restore`, { method: 'POST' }),
+  programHistory: (p: string, c: string, move?: string) => call<ProgramVersion[]>(`/projects/${p}/characters/${c}/programs/history${move ? `?move=${move}` : ''}`),
   sheetUrl: (p: string, a: SpriteAsset) => `/api/projects/${p}/assets/${a.id}/sheet.png?v=${encodeURIComponent(a.updatedAt)}`,
 };

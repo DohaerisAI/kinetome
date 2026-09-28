@@ -30,7 +30,7 @@ interface Props {
   /** The editor tab is visible (shortcuts only work then). */
   active: boolean;
   onSaved: (a: SpriteAsset) => void;
-  notify: (msg: string) => void;
+  notify: (msg: string, action?: { label: string; run: () => void }) => void;
   fail: (e: unknown) => void;
 }
 

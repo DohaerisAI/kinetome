@@ -6,3 +6,4 @@ export * from './ops.ts';
 export * from './sheet.ts';
 export * from './paint.ts';
 export * from './gif.ts';
+export * from './aseprite.ts';

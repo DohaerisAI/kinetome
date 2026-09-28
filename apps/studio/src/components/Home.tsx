@@ -4,6 +4,7 @@ import { api } from '../api.ts';
 import { Icon, type IconName } from '../icons.tsx';
 import { loadImage, useImage } from '../pixels.ts';
 import { useEnter } from '../motion.ts';
+import { ago } from '../time.ts';
 import { FrameThumb } from './FrameThumb.tsx';
 
 export type HomeTarget = 'library' | 'editor' | 'characters' | 'lineup' | 'style';
@@ -26,14 +27,6 @@ const greeting = () => {
   return h < 5 ? 'Late night pixels' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 };
 
-function ago(iso: string): string {
-  const s = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  const d = Math.floor(s / 86400);
-  return d === 1 ? 'yesterday' : d < 30 ? `${d}d ago` : new Date(iso).toLocaleDateString();
-}
 
 /**
  * The cast on a shared baseline, first frame of each (paused, like every player here),

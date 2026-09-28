@@ -3,6 +3,7 @@ import { designMovePrompt, layoutFor, newMove, PLATFORMER_MOVES, slugify, type M
 import { api, type CodeEvent, type Packed, type Usage } from '../../api.ts';
 import { Icon } from '../../icons.tsx';
 import { Orb } from '../Orb.tsx';
+import { ProgramHistory } from './ProgramHistory.tsx';
 import { mergeIntoAsset } from '../../merge.ts';
 import { loadImage, unpackFrames, useImage } from '../../pixels.ts';
 import { AnimPreview } from '../AnimPreview.tsx';
@@ -126,6 +127,17 @@ function MoveEditor(props: EditorProps) {
       update(latest);
     } catch (e) { props.fail(e); }
   };
+  /** Removes the move AND its animation program (the old code stays in the program history). */
+  const removeMove = () => {
+    const had = !!d.programs[m.id];
+    if (!confirm(`Remove the move “${m.name}”${had ? ' and its animation' : ''}? The library sprite keeps any saved copy.`)) return;
+    const before = d;
+    const programs = { ...d.programs };
+    delete programs[m.id];
+    update({ ...d, moves: d.moves.filter(x => x.id !== m.id), programs });
+    props.notify(`Removed ${m.name}`, { label: 'Undo', run: () => update(before) });
+  };
+
   const removeRef = async (file: string) => {
     try { update(await api.deleteMoveRef(projectId, d.id, m.id, file)); } catch (e) { props.fail(e); }
   };
@@ -133,7 +145,7 @@ function MoveEditor(props: EditorProps) {
   return (
     <div className="move-editor">
       <Step n={1} title="Describe" done={!!m.description.trim()}
-        right={<button className="icon-btn" onClick={() => update({ ...d, moves: d.moves.filter(x => x.id !== m.id) })} title="Remove move" aria-label="Remove move"><Icon name="trash" /></button>}>
+        right={<button className="icon-btn" onClick={removeMove} title="Remove move" aria-label="Remove move"><Icon name="trash" /></button>}>
         <div className="move-title">
           <input className="title-input small" value={nameDraft} onChange={e => setNameDraft(e.target.value)} onBlur={commitName} aria-label="Move name" />
           <span className="mono dim small" title="Animation name in the library and in Godot">anim: {m.id}</span>
@@ -370,6 +382,7 @@ function AnimateStep({ projectId, design: d, assets, model, update, notify, fail
       )}
       {programError && !running && <div className="issue error small">Current program: {programError}</div>}
       {runUsage.output > 0 && <p className="dim small">This run: {usageText(runUsage)}</p>}
+      {!running && d.programs[m.id] && <ProgramHistory projectId={projectId} design={d} move={m.id} current={program} update={update} fail={fail} />}
 
       {iters.length > 0 && (
         <div className="iters-wrap">

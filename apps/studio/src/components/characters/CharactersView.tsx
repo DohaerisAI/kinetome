@@ -24,7 +24,7 @@ interface Props {
   onUsage: (u: Usage) => void;
   onImport: (req: ImportRequest) => void;
   onAssetsChanged: () => void;
-  notify: (msg: string) => void;
+  notify: (msg: string, action?: { label: string; run: () => void }) => void;
   fail: (e: unknown) => void;
 }
 
@@ -102,12 +102,25 @@ export function CharactersView({ projectId, style, assets, model, onUsage, onImp
     } catch (e) { fail(e); }
   };
 
+  /** To the trash (its library sprite stays); the toast can bring it straight back. */
   const remove = async () => {
-    if (!design || !confirm(`Delete the design "${design.name}"? Its library sprite (if any) stays.`)) return;
+    if (!design) return;
+    const gone = design;
     try {
-      await api.deleteCharacter(projectId, design.id);
-      setDesigns(list => list.filter(d => d.id !== design.id));
-      setSelId(designs.find(d => d.id !== design.id)?.id ?? null);
+      await api.deleteCharacter(projectId, gone.id);
+      setDesigns(list => list.filter(d => d.id !== gone.id));
+      setSelId(designs.find(d => d.id !== gone.id)?.id ?? null);
+      notify(`Moved “${gone.name}” to the trash`, {
+        label: 'Undo', run: async () => {
+          try {
+            const entry = (await api.listTrash(projectId)).find(e => e.kind === 'character' && e.itemId === gone.id);
+            if (!entry) return;
+            const r = await api.restoreTrash(entry.id);
+            const list = await api.listCharacters(projectId);
+            setDesigns(list); setSelId(r.restoredId);
+          } catch (e) { fail(e); }
+        },
+      });
     } catch (e) { fail(e); }
   };
 

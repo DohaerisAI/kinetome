@@ -108,6 +108,7 @@ characters.post('/projects/:p/characters', async c => {
   return c.json(await store.createCharacter(c.req.param('p'), name.trim()), 201);
 });
 characters.get('/projects/:p/characters/:c', async c => c.json(await store.getCharacter(c.req.param('p'), c.req.param('c'))));
+characters.get('/projects/:p/characters/:c/programs/history', async c => c.json(await store.listProgramVersions(c.req.param('p'), c.req.param('c'), c.req.query('move') || undefined)));
 characters.put('/projects/:p/characters/:c', async c => c.json(await store.saveCharacter(c.req.param('p'), c.req.param('c'), await c.req.json())));
 characters.delete('/projects/:p/characters/:c', async c => { await store.deleteCharacter(c.req.param('p'), c.req.param('c')); return c.body(null, 204); });
 

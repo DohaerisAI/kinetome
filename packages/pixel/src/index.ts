@@ -9,3 +9,6 @@ export * from './motion.ts';
 export * from './split.ts';
 export * from './pipeline.ts';
 export * from './quality.ts';
+export * from './normals.ts';
+export * from './effects.ts';
+export * from './modelcheck.ts';
