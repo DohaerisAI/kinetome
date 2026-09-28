@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CharacterDesign, SpriteAsset, StyleBible } from '@kinetome/core';
 import type { Model, Usage } from '../../api.ts';
+import { Orb } from '../Orb.tsx';
 import { Icon, type IconName } from '../../icons.tsx';
 
 export interface ImportRequest {
@@ -47,7 +48,7 @@ export function CopyButton({ text, label = 'Copy prompt', primary = true }: { te
 export function ClaudeButton({ label, busyLabel, busy, onClick, disabled, icon = 'sparkle', title }: { label: string; busyLabel: string; busy: boolean; onClick: () => void; disabled?: boolean; icon?: IconName; title?: string }) {
   return (
     <button className="claude-btn" onClick={onClick} disabled={disabled || busy} title={title} aria-busy={busy}>
-      {busy ? <span className="spinner" aria-hidden /> : <Icon name={icon} />} {busy ? busyLabel : label}
+      {busy ? <Orb size={20} state="composing" /> : <Icon name={icon} />} {busy ? busyLabel : label}
     </button>
   );
 }

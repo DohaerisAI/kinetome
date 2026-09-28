@@ -1,3 +1,4 @@
+import { track } from './claudeActivity.ts';
 import type { CharacterDesign, GodotSettings, Project, Rect, SpriteAsset, StyleBible } from '@kinetome/core';
 
 export type Model = 'sonnet' | 'opus' | 'haiku';
@@ -81,17 +82,17 @@ export const api = {
   createCharacter: (p: string, name: string) => call<CharacterDesign>(`/projects/${p}/characters`, json({ name })),
   saveCharacter: (p: string, d: CharacterDesign) => call<CharacterDesign>(`/projects/${p}/characters/${d.id}`, { ...json(d), method: 'PUT' }),
   deleteCharacter: (p: string, id: string) => call<void>(`/projects/${p}/characters/${id}`, { method: 'DELETE' }),
-  describe: (p: string, id: string, model: Model) => call<{ design: CharacterDesign; conflicts: string[]; usage: Usage }>(`/projects/${p}/characters/${id}/describe`, json({ model })),
+  describe: (p: string, id: string, model: Model) => track('composing', 'Writing the visual brief', () => call<{ design: CharacterDesign; conflicts: string[]; usage: Usage }>(`/projects/${p}/characters/${id}/describe`, json({ model }))),
   draftMove: (p: string, id: string, move: string, model: Model, instruction?: string) =>
-    call<{ design: CharacterDesign; usage: Usage }>(`/projects/${p}/characters/${id}/moves/${move}/draft`, json({ model, instruction })),
+    track('shaping', `Drafting ${move} poses`, () => call<{ design: CharacterDesign; usage: Usage }>(`/projects/${p}/characters/${id}/moves/${move}/draft`, json({ model, instruction }))),
   renderCode: (p: string, id: string, code?: string) =>
     call<{ ok: true; packed: Packed; preview: string } | { ok: false; error: string }>(`/projects/${p}/characters/${id}/code/render`, json({ code })),
   /** Streams the write -> render -> review loop. Resolves when the stream ends. */
   runCode: (p: string, id: string, body: { model: Model; animations: string[]; rounds: number; feedback?: string; fromCurrent?: boolean; useReference?: boolean }, onEvent: (e: CodeEvent) => void, signal?: AbortSignal) =>
-    readStream(`/api/projects/${p}/characters/${id}/code/run`, body, onEvent, signal),
+    track('weaving', 'Animating in code', () => readStream(`/api/projects/${p}/characters/${id}/code/run`, body, onEvent, signal)),
   /** One move: new program, add to the existing one, remake or refine; other animations are kept. */
   animate: (p: string, id: string, body: { model: Model; move: string; mode?: 'auto' | 'remake' | 'refine'; rounds: number; feedback?: string; useReference?: boolean }, onEvent: (e: CodeEvent) => void, signal?: AbortSignal) =>
-    readStream(`/api/projects/${p}/characters/${id}/code/animate`, body, onEvent, signal),
+    track('weaving', `Animating ${body.move}`, () => readStream(`/api/projects/${p}/characters/${id}/code/animate`, body, onEvent, signal)),
   uploadMoveRef: (p: string, id: string, move: string, file: File) => {
     const f = new FormData(); f.set('image', file, file.name);
     return call<CharacterDesign>(`/projects/${p}/characters/${id}/moves/${move}/refs`, { method: 'POST', body: f });

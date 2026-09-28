@@ -73,6 +73,8 @@ const paths: Record<string, string> = {
   dither: 'M3 3h2v2H3zM7 3h2v2H7zM11 3h2v2h-2zM5 7h2v2H5zM9 7h2v2H9zM3 11h2v2H3zM7 11h2v2H7zM11 11h2v2h-2z',
   reference: 'M2.5 3.5h11v9h-11zM2.5 10.5l3-3 3 3 2-2 3 3M6 3.5V2M10 3.5V2',
   gif: 'M2.5 3.5h11v9h-11zM6.5 6.3H5.2v3.4h1.3V8.3M8.5 6.3v3.4M10.5 9.7V6.3h1.5M10.5 8h1.2',
+  home: 'M2.5 7.2L8 2.8l5.5 4.4V13.5h-3.8V9.8H6.3v3.7H2.5z',
+  command: 'M6 6h4v4H6zM6 6V4.5a1.5 1.5 0 1 0-1.5 1.5H6zM10 6V4.5a1.5 1.5 0 1 1 1.5 1.5H10zM6 10v1.5a1.5 1.5 0 1 1-1.5-1.5H6zM10 10v1.5a1.5 1.5 0 1 0 1.5-1.5H10z',
   target: 'M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11zM8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM8 1v2M8 13v2M1 8h2M13 8h2',
 };
 

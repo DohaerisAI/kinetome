@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { designMovePrompt, layoutFor, newMove, PLATFORMER_MOVES, slugify, type MoveDraft, type PixelImage } from '@kinetome/core';
 import { api, type CodeEvent, type Packed, type Usage } from '../../api.ts';
 import { Icon } from '../../icons.tsx';
+import { Orb } from '../Orb.tsx';
 import { mergeIntoAsset } from '../../merge.ts';
 import { loadImage, unpackFrames, useImage } from '../../pixels.ts';
 import { AnimPreview } from '../AnimPreview.tsx';
@@ -361,7 +362,7 @@ function AnimateStep({ projectId, design: d, assets, model, update, notify, fail
 
       {running && status && (
         <div className="run-status" role="status">
-          <span className="spinner" aria-hidden />
+          <Orb size={32} state={/review/i.test(status) ? 'searching' : /render/i.test(status) ? 'shaping' : 'weaving'} />
           <span>{status}</span>
           <span className="dim small mono">{progress ? `step ${progress.i}/${progress.total} · ` : ''}{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</span>
           <div className="progress"><div style={{ width: `${progress ? ((progress.i - 0.5) / progress.total) * 100 : 5}%` }} /></div>

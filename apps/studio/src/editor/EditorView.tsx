@@ -4,6 +4,8 @@ import { Icon } from '../icons.tsx';
 import { api } from '../api.ts';
 import { useImage } from '../pixels.ts';
 import { FrameThumb } from '../components/FrameThumb.tsx';
+import { PageHeader } from '../components/PageHeader.tsx';
+import { useEnter } from '../motion.ts';
 import { Canvas, fitZoom } from './Canvas.tsx';
 import { ColorPanel, LayersPanel } from './Panels.tsx';
 import { FrameTools } from './FrameTools.tsx';
@@ -64,6 +66,9 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
   const clipboard = useRef<Floating | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const source = state.source.assetId ? assets.find(a => a.id === state.source.assetId) ?? null : null;
+
+  const welcome = useRef<HTMLElement>(null);
+  useEnter(welcome, [started, active]);
 
   const confirmDiscard = () => !state.dirty || confirm('Discard unsaved changes in the editor?');
 
@@ -268,23 +273,22 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
 
   if (!started) {
     return (
-      <main className="ed-welcome">
+      <main className="ed-welcome" ref={welcome}>
         <div className="ed-welcome-inner">
-          <h2>Sprite editor</h2>
-          <p className="dim">Frames × layers with tags and onion skin, a full pixel toolset, sheet slicing and batch clean-up.</p>
+          <PageHeader icon="pencil" title="Sprite editor" sub="Frames × layers with tags and onion skin, a full pixel toolset, shading and dither, sheet slicing and batch clean-up." />
           <div className="ed-welcome-grid">
-            <button className="ed-welcome-card" onClick={() => fileInput.current?.click()}>
+            <button className="ed-welcome-card" data-enter onClick={() => fileInput.current?.click()}>
               <Icon name="upload" size={22} /><strong>Import a sprite sheet</strong>
               <span className="dim small">Any sheet, 10 or 100 frames: remove the background, split evenly or unevenly. Also GIFs, videos and frame sequences.</span>
             </button>
-            <button className="ed-welcome-card" onClick={() => { setMenu('new'); setStarted(true); }}>
+            <button className="ed-welcome-card" data-enter onClick={() => { setMenu('new'); setStarted(true); }}>
               <Icon name="plus" size={22} /><strong>New sprite</strong>
               <span className="dim small">Blank canvas with your Style Bible palette.</span>
             </button>
           </div>
           {assets.length > 0 && (
             <>
-              <h3>Open from the library</h3>
+              <h3 data-enter>Open from the library</h3>
               <div className="ed-asset-grid">{assets.map(a => <AssetPick key={a.id} projectId={projectId} asset={a} onClick={() => void openLibrary(a)} />)}</div>
             </>
           )}

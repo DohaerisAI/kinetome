@@ -3,6 +3,8 @@ import { countColors, StyleBible, type Project, type SpriteAsset } from '@kineto
 import { api } from '../api.ts';
 import { loadImage, toPixels } from '../pixels.ts';
 import { EyedropperButton } from './Eyedropper.tsx';
+import { PageHeader } from './PageHeader.tsx';
+import { Icon } from '../icons.tsx';
 
 interface Props {
   projectId: string;
@@ -54,9 +56,10 @@ export function StyleView({ projectId, project, style, assets, onSaved, onProjec
 
   return (
     <main className="style-view">
+      <PageHeader icon="palette" title="Style Bible" sub="The rules every sprite in this project follows: palette, scale, light and outline. Claude and every check read it." />
       <div className="style-grid">
-        <section className="card">
-          <h3>Palette <span className="dim">{draft.palette.length} colors, locked</span></h3>
+        <section className="card" data-enter>
+          <h3><Icon name="palette" size={14} /> Palette <span className="dim">{draft.palette.length} colors, locked</span></h3>
           <p className="dim small">Every pixel in the project must come from this list. Click a swatch to remove it.</p>
           <div className="swatches big">
             {draft.palette.map(c => (
@@ -80,8 +83,8 @@ export function StyleView({ projectId, project, style, assets, onSaved, onProjec
           </div>
         </section>
 
-        <section className="card">
-          <h3>Form</h3>
+        <section className="card" data-enter>
+          <h3><Icon name="pivot" size={14} /> Form</h3>
           <div className="row2">
             <label className="field"><span>Unit height (px)</span>
               <input type="number" min={8} max={512} value={draft.unitHeight} onChange={e => set('unitHeight', Number(e.target.value))} />
@@ -118,8 +121,8 @@ export function StyleView({ projectId, project, style, assets, onSaved, onProjec
           </div>
         </section>
 
-        <section className="card">
-          <h3>Godot export</h3>
+        <section className="card" data-enter>
+          <h3><Icon name="download" size={14} /> Godot export</h3>
           <p className="dim small">Zip export always works. Set the Godot project folder (the one with project.godot) to sync files straight in; Godot re-imports when you switch back to it.</p>
           <label className="field"><span>Godot project folder (optional)</span>
             <input value={godotPath} onChange={e => setGodotPath(e.target.value)} placeholder="/mnt/c/Users/you/Documents/my-game" />
@@ -134,15 +137,15 @@ export function StyleView({ projectId, project, style, assets, onSaved, onProjec
           </div>
         </section>
 
-        <section className="card wide">
-          <h3>Art direction notes</h3>
+        <section className="card wide" data-enter>
+          <h3><Icon name="sparkle" size={14} /> Art direction notes</h3>
           <p className="dim small">Plain-language direction handed to every generator verbatim: mood, era, references, dos and don'ts.</p>
           <textarea rows={5} value={draft.notes} onChange={e => set('notes', e.target.value)}
             placeholder="e.g. 16-bit SNES-era fantasy. Chunky readable silhouettes, 2-tone shading, no dithering on characters, cyan reserved for magic." />
         </section>
       </div>
-      <div className="savebar">
-        <span className="dim">{dirty ? 'Unsaved changes' : 'Saved'}</span>
+      <div className={dirty ? 'savebar dirty' : 'savebar'}>
+        <span className={dirty ? 'savebar-state warn' : 'savebar-state'}><Icon name={dirty ? 'dot' : 'check'} size={14} /> {dirty ? 'Unsaved changes' : 'All changes saved'}</span>
         <button onClick={() => setDraft(style)} disabled={!dirty}>Revert</button>
         <button className="primary" onClick={save} disabled={!dirty}>Save Style Bible</button>
       </div>

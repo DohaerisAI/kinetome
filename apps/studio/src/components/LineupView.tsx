@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { lintAsset, type LintReport, type SpriteAsset, type StyleBible } from '@kinetome/core';
 import { api } from '../api.ts';
 import { loadImage, toPixels } from '../pixels.ts';
+import { PageHeader } from './PageHeader.tsx';
 
 interface Loaded { asset: SpriteAsset; img: HTMLImageElement; report: LintReport }
 
@@ -42,8 +43,8 @@ export function LineupView({ projectId, assets, style, paletteFor, onOpen }: {
     const totalW = shown.reduce((s, l) => s + l.asset.frameWidth, 0);
     const z = zoom || Math.max(1, Math.min(8, Math.floor(260 / (above + below)), Math.floor(1100 / Math.max(1, totalW + gap * shown.length))));
     const pad = 40;
-    c.width = Math.max(320, totalW * z + gap * z * Math.max(0, shown.length - 1) + pad * 2);
-    c.height = (above + below) * z + pad * 2 + 16;
+    c.width = Math.max(320, totalW * z + gap * z * Math.max(0, shown.length - 1) + pad * 2 + 60); // room for the last name
+    c.height = (above + below) * z + pad * 2 + 30;
     const ctx = c.getContext('2d')!;
     const baseline = pad + above * z;
 
@@ -51,7 +52,7 @@ export function LineupView({ projectId, assets, style, paletteFor, onOpen }: {
     const start = performance.now();
     const draw = (now: number) => {
       const t = (now - start) / 1000;
-      ctx.fillStyle = '#15151f';
+      ctx.fillStyle = '#0f0f18';
       ctx.fillRect(0, 0, c.width, c.height);
       ctx.imageSmoothingEnabled = false;
       // unit height guide + baseline
@@ -62,12 +63,14 @@ export function LineupView({ projectId, assets, style, paletteFor, onOpen }: {
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = 'rgba(120,200,255,0.6)';
-      ctx.font = '11px monospace';
+      ctx.font = "11px 'Geist Mono Variable', monospace";
       ctx.fillText(`unit ${style.unitHeight}px`, 6, baseline - style.unitHeight * z - 4);
       ctx.strokeStyle = 'rgba(255,90,140,0.5)';
       ctx.beginPath(); ctx.moveTo(0, baseline + 0.5); ctx.lineTo(c.width, baseline + 0.5); ctx.stroke();
 
       let x = pad;
+      // names sit on two rows so neighbours never overprint each other
+      const rowEnd = [-Infinity, -Infinity];
       for (const l of shown) {
         const anim = pickAnim(l.asset);
         const seq = anim?.frames ?? [0];
@@ -77,7 +80,10 @@ export function LineupView({ projectId, assets, style, paletteFor, onOpen }: {
         if (r) ctx.drawImage(l.img, r.x, r.y, r.w, r.h, x, top, r.w * z, r.h * z);
         const bad = l.report.issues.some(i => i.severity !== 'info');
         ctx.fillStyle = bad ? '#ffb454' : '#9aa0c8';
-        ctx.fillText(l.asset.name.slice(0, 14), x, c.height - 14);
+        const name = l.asset.name.slice(0, 16), w = ctx.measureText(name).width;
+        const row = x >= rowEnd[0] + 8 ? 0 : x >= rowEnd[1] + 8 ? 1 : rowEnd[0] <= rowEnd[1] ? 0 : 1;
+        rowEnd[row] = x + w;
+        ctx.fillText(name, x, c.height - (row ? 10 : 24));
         x += (l.asset.frameWidth + gap) * z;
       }
       if (playing) raf = requestAnimationFrame(draw);
@@ -88,17 +94,14 @@ export function LineupView({ projectId, assets, style, paletteFor, onOpen }: {
 
   return (
     <main className="lineup">
-      <div className="viewer-toolbar">
-        <strong>Lineup</strong>
-        <span className="dim">Same scale, shared baseline: anything off-style stands out.</span>
-        <div className="spacer" />
+      <PageHeader icon="grid" title="Lineup" sub="Your whole cast at one scale on a shared baseline. Anything off-model or off-palette stands out.">
         <label className="toggle"><input type="checkbox" checked={playing} onChange={e => setPlaying(e.target.checked)} /> Animate</label>
         <label className="toggle"><input type="checkbox" checked={onlyChars} onChange={e => setOnlyChars(e.target.checked)} /> Characters only</label>
         <select value={zoom} onChange={e => setZoom(Number(e.target.value))} aria-label="Zoom">
           <option value={0}>Auto</option>
           {[1, 2, 3, 4, 6, 8].map(n => <option key={n} value={n}>{n}×</option>)}
         </select>
-      </div>
+      </PageHeader>
       <div className="lineup-stage"><canvas ref={canvas} /></div>
       <table className="report">
         <thead><tr><th>Asset</th><th>Kind</th><th>Colors</th><th>Height</th><th>Style check</th></tr></thead>
