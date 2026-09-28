@@ -11,3 +11,4 @@ export * from './program.ts';
 export * from './tileset.ts';
 export * from './atlas.ts';
 export * from './variants.ts';
+export * from './rig.ts';

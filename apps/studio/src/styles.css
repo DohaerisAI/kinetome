@@ -779,6 +779,27 @@ a.button.disabled { opacity: .4; pointer-events: none; }
 .panel-title .icon-btn { padding: 4px; margin-left: 6px; }
 .panel-title .spacer { flex: 1; }
 
+
+/* ============ rig ============ */
+.rig { display: flex; flex-direction: column; gap: 16px; max-width: 1280px; }
+.rig-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+.rig-stage { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }
+.rig-stage canvas { border-radius: 12px; border: 1px solid var(--line); touch-action: none; max-width: 100%; }
+.rig-list { display: flex; flex-direction: column; gap: 4px; max-height: 480px; overflow: auto; }
+.rig-part { display: grid; grid-template-columns: 12px 1fr 110px 46px 26px; gap: 6px; align-items: center; padding: 4px 6px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; }
+.rig-part:hover { background: var(--panel-2); }
+.rig-part.on { background: var(--panel-3); border-color: var(--line-2); }
+.rig-part input:not([type]) { padding: 3px 7px; }
+.rig-dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(0,0,0,.4); }
+.rig-timeline { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; }
+.rig-f { width: 30px; height: 26px; min-height: 0; padding: 0; justify-content: center; font: 11px var(--mono); color: var(--dim); background: var(--bg-2); border-radius: 7px; box-shadow: none; }
+.rig-f.key { color: #ffd166; }
+.rig-f.cur { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 1px var(--accent) inset; }
+.rig-side { display: flex; flex-direction: column; gap: 8px; }
+.rig-side h3 { margin: 10px 0 0; }
+.rig-row { display: flex; gap: 8px; align-items: center; }
+@media (max-width: 1150px) { .rig-grid { grid-template-columns: 1fr; } }
+
 @media (max-width: 1580px) { .search-btn { min-width: 0; padding: 4px 9px; } .search-btn span, .search-btn kbd { display: none; } }
 @media (max-width: 1440px) { .topbar .godot-btn span { display: none; } }
 @media (max-width: 1500px) { .tab:not(.active) span { display: none; } .tab:not(.active) { padding: 4px 10px; } }

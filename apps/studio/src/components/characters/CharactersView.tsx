@@ -4,15 +4,17 @@ import { api, type Model, type Usage } from '../../api.ts';
 import { Icon, type IconName } from '../../icons.tsx';
 import { loadImage, toPixels, useImage } from '../../pixels.ts';
 import { FrameThumb } from '../FrameThumb.tsx';
+import { RigTab } from './RigTab.tsx';
 import { AnimationsTab } from './AnimationsTab.tsx';
 import { DesignTab } from './DesignTab.tsx';
 import { ReferenceTab } from './ReferenceTab.tsx';
 import { usageText, type ImportRequest, type TabProps } from './shared.tsx';
 
-type Sub = 'design' | 'reference' | 'animations';
+type Sub = 'design' | 'reference' | 'rig' | 'animations';
 const SUBS: { id: Sub; label: string; icon: IconName; hint: string }[] = [
   { id: 'design', label: 'Design', icon: 'palette', hint: 'Lore, colors per part, what never changes' },
   { id: 'reference', label: 'Reference', icon: 'image', hint: 'The master sprite, drawn in Gemini' },
+  { id: 'rig', label: 'Rig', icon: 'scissors', hint: 'Parts and joints, then animate any move with keyframes' },
   { id: 'animations', label: 'Animations', icon: 'film', hint: 'Claude animates the reference with code' },
 ];
 
@@ -204,6 +206,7 @@ export function CharactersView({ projectId, style, assets, model, onUsage, onImp
           <div className="chars-body">
             {sub === 'design' && <DesignTab {...props} onNext={() => setSub('reference')} />}
             {sub === 'reference' && <ReferenceTab {...props} />}
+            {sub === 'rig' && <RigTab {...props} />}
             {sub === 'animations' && <AnimationsTab {...props} />}
           </div>
         </section>

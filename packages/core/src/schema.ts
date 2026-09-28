@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CharacterRig } from './rig.ts';
 
 export const Hex = z.string().regex(/^#[0-9a-f]{6}$/i, 'expected #rrggbb');
 
@@ -164,6 +165,8 @@ export const CharacterDesign = z.object({
   codeRig: z.boolean().default(false),
   /** One sprite program per animation (preferred): editing a move never re-outputs the others. Overrides `code`. */
   programs: z.record(z.string(), z.string()).default({}),
+  /** Parts, joints and keyframe clips drawn in the rig editor (null until set up). */
+  rig: CharacterRig.nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

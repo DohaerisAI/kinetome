@@ -119,5 +119,8 @@ export const api = {
   versionSheetUrl: (p: string, a: string, v: string) => `/api/projects/${p}/assets/${a}/versions/${v}/sheet.png`,
   restoreVersion: (p: string, a: string, v: string) => call<SpriteAsset>(`/projects/${p}/assets/${a}/versions/${v}/restore`, { method: 'POST' }),
   programHistory: (p: string, c: string, move?: string) => call<ProgramVersion[]>(`/projects/${p}/characters/${c}/programs/history${move ? `?move=${move}` : ''}`),
+  // rig: parts cut once, moves as keyframes
+  rigSuggest: (p: string, c: string, model: Model) => track('shaping', 'Cutting the rig', () => call<{ design: CharacterDesign; notes: string; usage: Usage }>(`/projects/${p}/characters/${c}/rig/suggest`, json({ model }))),
+  rigAnimate: (p: string, c: string, body: { move: string; model: Model; rounds: number; feedback?: string }) => track('weaving', `Keyframing ${body.move}`, () => call<{ design: CharacterDesign; notes: string; usage: Usage }>(`/projects/${p}/characters/${c}/rig/animate`, json(body))),
   sheetUrl: (p: string, a: SpriteAsset) => `/api/projects/${p}/assets/${a.id}/sheet.png?v=${encodeURIComponent(a.updatedAt)}`,
 };
