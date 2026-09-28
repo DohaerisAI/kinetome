@@ -1,6 +1,6 @@
 import { hardenAlpha, snapToPalette, type PixelImage } from '@kinetome/core';
 import { addOutline, estimateBackground, removeBackground, removeOrphans, useHoles, type Background } from '@kinetome/pixel';
-import { blank, cloneImage, composite, getCel, mapBoxes, withCel, type EditorDoc } from './doc.ts';
+import { addFrame, addLayer, blank, cloneImage, composite, getCel, mapBoxes, patchLayer, withCel, type EditorDoc } from './doc.ts';
 import { opaqueBounds, replaceColor, resizeCanvas, scaleNearest, shift, type RGBA } from './raster.ts';
 
 /**
@@ -184,4 +184,37 @@ export function usedColors(doc: EditorDoc, limit = 256): string[] {
       counts.set(k, (counts.get(k) ?? 0) + 1);
     }
   return [...counts].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([k]) => '#' + ((1 << 24) | k).toString(16).slice(1));
+}
+
+export const GUIDE_LAYER = 'In-between guide';
+
+/**
+ * Inserts an empty frame between frames a and b with both poses drawn on a guide layer
+ * (a tinted blue, b red, half transparent, locked), so the in-between can be drawn over
+ * them. Delete or hide the guide layer when done; it's just a drawing aid.
+ */
+export function insertInbetween(doc: EditorDoc, a: number, b: number): { doc: EditorDoc; index: number } {
+  const [lo, hi] = a < b ? [a, b] : [b, a];
+  const fa = composite(doc, lo), fb = composite(doc, hi);
+  const ins = addFrame(doc, lo, false);
+  let next = ins.doc;
+  let guide = next.layers.find(l => l.name === GUIDE_LAYER);
+  if (!guide) {
+    const r = addLayer(next, next.layers[next.layers.length - 1].id);
+    next = patchLayer(r.doc, r.id, { name: GUIDE_LAYER, opacity: 0.5, locked: true });
+    guide = next.layers.find(l => l.id === r.id)!;
+    // at the bottom, like a light table: you draw on top of it
+    next = { ...next, layers: [guide, ...next.layers.filter(l => l.id !== guide!.id)] };
+  }
+  const cel = blank(doc.width, doc.height);
+  const tint = (src: typeof fa, rgb: [number, number, number]) => {
+    for (let i = 0; i < src.data.length; i += 4) {
+      if (src.data[i + 3] < 128) continue;
+      cel.data[i] = (src.data[i] + rgb[0]) >> 1; cel.data[i + 1] = (src.data[i + 1] + rgb[1]) >> 1; cel.data[i + 2] = (src.data[i + 2] + rgb[2]) >> 1; cel.data[i + 3] = 255;
+    }
+  };
+  tint(fa, [60, 110, 255]);
+  tint(fb, [255, 80, 80]);
+  next = withCel(next, guide.id, next.frames[ins.index].id, cel);
+  return { doc: next, index: ins.index };
 }

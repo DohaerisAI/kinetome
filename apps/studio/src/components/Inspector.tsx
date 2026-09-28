@@ -125,6 +125,16 @@ export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelet
           <textarea key={asset.id} rows={2} defaultValue={asset.description} placeholder="What it looks like: body, clothes, colors, details"
             onBlur={e => e.target.value !== asset.description && patch({ description: e.target.value })} />
         </label>
+        <div className="field">
+          <span>Tags</span>
+          <div className="tag-edit">
+            {asset.tags.map(t => <span key={t} className="chip tag active">#{t}<button className="icon" onClick={() => patch({ tags: asset.tags.filter(x => x !== t) })} aria-label={`Remove tag ${t}`}>×</button></span>)}
+            <input placeholder="add tag" aria-label="Add tag" onKeyDown={e => {
+              const v = (e.target as HTMLInputElement).value.trim().toLowerCase().replace(/^#/, '').replace(/\s+/g, '-');
+              if (e.key === 'Enter' && v && !asset.tags.includes(v)) { patch({ tags: [...asset.tags, v] }); (e.target as HTMLInputElement).value = ''; }
+            }} />
+          </div>
+        </div>
         <label className="toggle block" title="Approved assets are fed to generators as style references">
           <input type="checkbox" checked={asset.reference} onChange={e => patch({ reference: e.target.checked })} />
           Style reference for this project

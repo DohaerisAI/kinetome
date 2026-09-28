@@ -146,7 +146,8 @@ export function Home({ project, style, assets, designs, projectId, onGo, onOpenA
   const root = useRef<HTMLElement>(null);
   useEnter(root, [projectId]);
 
-  const animated = designs.reduce((n, d) => n + Object.keys(d.programs ?? {}).length, 0);
+  // a move counts as animated by code (a program) or by the rig (a keyframe clip)
+  const animated = designs.reduce((n, d) => n + new Set([...Object.keys(d.programs ?? {}), ...Object.keys(d.rig?.clips ?? {})]).size, 0);
   const moves = designs.reduce((n, d) => n + d.moves.length, 0);
   const animCount = assets.reduce((n, a) => n + a.animations.length, 0);
   const recent = [...assets].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 8);
@@ -154,7 +155,7 @@ export function Home({ project, style, assets, designs, projectId, onGo, onOpenA
   const steps: { tab: HomeTarget; icon: IconName; title: string; detail: string; done: boolean; cta: string }[] = [
     { tab: 'style', icon: 'palette', title: 'Style Bible', detail: `${style.palette.length} colors · ${style.unitHeight}px characters · ${style.perspective} view`, done: style.palette.length >= 2 && !!style.notes.trim(), cta: 'Set the rules' },
     { tab: 'characters', icon: 'users', title: 'Characters', detail: designs.length ? designs.map(d => d.name).slice(0, 3).join(', ') + (designs.length > 3 ? ` +${designs.length - 3}` : '') : 'Describe someone; Gemini draws the reference', done: designs.length > 0, cta: designs.length ? 'Open cast' : 'Create one' },
-    { tab: 'characters', icon: 'film', title: 'Animations', detail: moves ? `${animated} of ${moves} moves animated by Claude` : 'Walk, attack, idle: Claude animates in code', done: animated > 0, cta: animated ? 'Animate more' : 'Animate' },
+    { tab: 'characters', icon: 'film', title: 'Animations', detail: moves ? `${animated} of ${moves} moves animated` : 'Walk, attack, idle: rig keyframes or Claude code', done: animated > 0, cta: animated ? 'Animate more' : 'Animate' },
     { tab: 'editor', icon: 'pencil', title: 'Polish', detail: `${assets.length} sprites · ${animCount} animations in the library`, done: assets.some(a => a.tags.includes('edited')), cta: 'Open editor' },
     { tab: 'style', icon: 'download', title: 'Ship to Godot', detail: project?.godot.path ? `Syncs into ${project.godot.path.split(/[\\/]/).slice(-2).join('/')}` : 'Zip download anytime, or sync a project folder', done: !!project?.godot.path, cta: project?.godot.path ? 'Settings' : 'Connect' },
   ];

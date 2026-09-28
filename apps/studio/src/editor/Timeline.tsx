@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PixelImage } from '@kinetome/core';
 import { Icon } from '../icons.tsx';
-import { addFrame, addTag, composite, getCel, moveFrames, patchFrameMeta, patchTag, removeFrames, removeTag, setDurations, type EditorDoc } from './model.ts';
+import { addFrame, addTag, composite, getCel, insertInbetween, moveFrames, patchFrameMeta, patchTag, removeFrames, removeTag, setDurations, type EditorDoc } from './model.ts';
 
 /** Events games commonly listen for; spawn:<effect> plays a Kinetome effect in the playtest. */
 const EVENT_SUGGESTIONS = ['impact', 'footstep', 'spawn:slash', 'spawn:spark', 'spawn:dust', 'spawn:leaves', 'spawn:magic', 'sound:swing', 'sound:hit', 'invulnerable', 'can_cancel'];
@@ -96,6 +96,8 @@ export function Timeline({ ed }: { ed: EditorApi }) {
           <span className="dim small">({Math.round(1000 / avgMs)} fps)</span>
         </label>
         <button className="small" onClick={() => { const a = pick[0], b = pick[pick.length - 1]; ed.commit('New tag', addTag(doc, `anim${doc.tags.length + 1}`, a, b)); }} disabled={!contiguous} title="Name the picked frames as an animation (tag)"><Icon name="tag" size={12} /> Tag</button>
+        <button className="small" disabled={pick.length !== 2} onClick={() => { ed.settle(); const r = insertInbetween(ed.ref.current.doc, pick[0], pick[1]); const draw = r.doc.layers.find(l => !l.locked && l.name !== 'In-between guide'); ed.commit('In-between', r.doc, { frame: r.index, picked: [r.index], ...(draw ? { layerId: draw.id } : {}) }); }}
+          title="Pick two frames (Ctrl-click): inserts a frame after the first with both poses on a guide layer to draw the in-between over"><Icon name="onion" size={12} /> In-between</button>
         <div className="spacer" />
         <button className={onion.on ? 'chip active' : 'chip'} onClick={() => ed.set(s => ({ onion: { ...s.onion, on: !s.onion.on } }))} title="Onion skin (O): past frames blue, next frames red" aria-pressed={onion.on}><Icon name="onion" size={12} /> Onion</button>
         {onion.on && (

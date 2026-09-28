@@ -23,14 +23,27 @@ export function AssetList({ projectId, assets, selectedId, onSelect, onNewEffect
   projectId: string; assets: SpriteAsset[]; selectedId: string | null; onSelect: (id: string) => void; onNewEffect: () => void;
 }) {
   const [q, setQ] = useState('');
-  const shown = assets.filter(a => !q || `${a.name} ${a.kind} ${a.animations.map(x => x.name).join(' ')}`.toLowerCase().includes(q.toLowerCase()));
+  const [kind, setKind] = useState<string | null>(null);
+  const [tag, setTag] = useState<string | null>(null);
+  // folders without folders: filter by kind and by tag (tags come from the sprites themselves)
+  const kinds = [...new Set(assets.map(a => a.kind))];
+  const tags = [...new Set(assets.flatMap(a => a.tags))].sort();
+  const shown = assets.filter(a => (!kind || a.kind === kind) && (!tag || a.tags.includes(tag)) && (!q || `${a.name} ${a.kind} ${a.tags.join(' ')} ${a.animations.map(x => x.name).join(' ')}`.toLowerCase().includes(q.toLowerCase())));
   return (
     <aside className="panel asset-list">
       <div className="panel-title">Library <span className="dim">{assets.length}</span><div className="spacer" /><button className="icon-btn" onClick={onNewEffect} title="New effect: slash, dust, spark, leaves, magic" aria-label="New effect"><Icon name="sparkle" size={14} /></button></div>
-      {assets.length > 4 && (
+      {assets.length > 0 && (
         <div className="search">
           <Icon name="search" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Filter sprites" aria-label="Filter sprites" />
+        </div>
+      )}
+      {(kinds.length > 1 || tags.length > 0) && (
+        <div className="lib-filters">
+          {kinds.length > 1 && [null, ...kinds].map(k => (
+            <button key={k ?? 'all'} className={kind === k ? 'chip active' : 'chip'} onClick={() => setKind(k)}>{k ?? 'All'}<span className="dim">{k ? assets.filter(a => a.kind === k).length : assets.length}</span></button>
+          ))}
+          {tags.map(t => <button key={t} className={tag === t ? 'chip tag active' : 'chip tag'} onClick={() => setTag(tag === t ? null : t)}>#{t}</button>)}
         </div>
       )}
       <div className="scroll">

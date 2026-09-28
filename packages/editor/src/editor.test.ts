@@ -313,3 +313,19 @@ test('frame meta: boxes/events survive export, follow resize/trim/scale, duplica
   assert.equal(copied.frames[2].meta?.hurtboxes.length, 1);
   assert.deepEqual(copied.frames[1].meta?.events, ['impact'], 'events untouched when not copied');
 });
+
+test('in-between: new frame between the two, both poses on a locked half-transparent guide layer', async () => {
+  const { insertInbetween, GUIDE_LAYER } = await import('./index.ts');
+  let doc = createDoc(8, 8, 2, 'ib');
+  const a = blank(8, 8); stamp(a, 1, 1, RED, 1); const b2 = blank(8, 8); stamp(b2, 6, 6, RED, 1);
+  doc = withCel(withCel(doc, doc.layers[0].id, doc.frames[0].id, a), doc.layers[0].id, doc.frames[1].id, b2);
+  const r = insertInbetween(doc, 0, 1);
+  assert.equal(r.doc.frames.length, 3); assert.equal(r.index, 1);
+  const guide = r.doc.layers.find(l => l.name === GUIDE_LAYER)!;
+  assert.ok(guide.locked); assert.equal(guide.opacity, 0.5);
+  const cel = getCel(r.doc, guide.id, r.doc.frames[1].id)!;
+  assert.equal(cel.data[(1 * 8 + 1) * 4 + 3], 255); assert.equal(cel.data[(6 * 8 + 6) * 4 + 3], 255);
+  assert.ok(cel.data[(1 * 8 + 1) * 4 + 2] > cel.data[(1 * 8 + 1) * 4 + 1], 'first pose tinted blue');
+  assert.equal(r.doc.layers[0].id, guide.id, 'guide sits at the bottom, like a light table');
+  assert.equal(getCel(r.doc, r.doc.layers[1].id, r.doc.frames[1].id), undefined, 'drawing layer left empty');
+});
