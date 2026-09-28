@@ -702,6 +702,19 @@ body.eyedropping::after { content: 'Click anything to pick its color · Esc canc
 .pt-event { color: #ffd166; background: rgba(60,40,0,.75) !important; }
 .pt-foot { margin: 12px 0 0; }
 
+
+/* editor: hitboxes + events */
+.ed-box-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; border: 1.5px solid; }
+.ed-box-dot.hurt { border-color: rgb(80,200,255); background: rgba(80,200,255,.2); }
+.ed-box-dot.hit { border-color: rgb(255,70,110); background: rgba(255,70,110,.25); }
+.ed-ev { height: 18px; min-height: 0; padding: 0; justify-content: center; background: transparent; border: 1px dashed transparent; border-radius: 5px; box-shadow: none; }
+.ed-ev:hover:not(:disabled) { background: var(--panel-2); border-color: var(--line-2); }
+.ed-ev.on { border-color: #ffd166; border-style: solid; }
+.ed-ev-mark { color: #ffd166; font-size: 10px; font-weight: 700; line-height: 1; }
+.ed-ev-mark.big { font-size: 13px; }
+.ed-ev-chip { display: inline-flex; align-items: center; gap: 4px; padding-right: 4px; font-family: var(--mono); font-size: 11.5px; }
+.ed-tag-edit input[list] { width: 200px; }
+
 @media (max-width: 1580px) { .search-btn { min-width: 0; padding: 4px 9px; } .search-btn span, .search-btn kbd { display: none; } }
 @media (max-width: 1440px) { .topbar .godot-btn span { display: none; } }
 @media (max-width: 1240px) { .tab span { display: none; } .tab { padding: 4px 9px; } .claude-pill .pill-label { display: none; } }

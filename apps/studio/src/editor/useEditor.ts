@@ -5,7 +5,7 @@ import {
   type Dither,
 } from './model.ts';
 
-export type Tool = 'pencil' | 'eraser' | 'shade' | 'bucket' | 'picker' | 'line' | 'rect' | 'ellipse' | 'select' | 'lasso' | 'wand' | 'move' | 'hand';
+export type Tool = 'pencil' | 'eraser' | 'shade' | 'boxes' | 'bucket' | 'picker' | 'line' | 'rect' | 'ellipse' | 'select' | 'lasso' | 'wand' | 'move' | 'hand';
 
 export interface ToolOptions {
   brush: number;
@@ -23,7 +23,7 @@ export interface ToolOptions {
 
 export interface Onion { on: boolean; prev: number; next: number; tint: boolean; opacity: number }
 
-export interface View { zoom: number; panX: number; panY: number; grid: boolean; showPivot: boolean; bg: 'checker' | 'dark' | 'light' }
+export interface View { zoom: number; panX: number; panY: number; grid: boolean; showPivot: boolean; bg: 'checker' | 'dark' | 'light'; showBoxes: boolean }
 
 /** A tracing / pose reference drawn over or under the sprite (never saved into it). */
 export interface Reference { url: string; name: string; opacity: number; show: boolean; front: boolean }
@@ -50,6 +50,9 @@ export interface EditorState {
   playing: boolean;
   source: EditorSource;
   reference: Reference | null;
+  /** Hitbox tool: which kind new boxes are, and the selected box on the current frame. */
+  boxKind: 'hitboxes' | 'hurtboxes';
+  selectedBox: { kind: 'hitboxes' | 'hurtboxes'; index: number } | null;
   /** Last committed pixel edit (for "apply this fix to other frames"). */
   lastEdit: { layerId: string; frame: number; before: EditorDoc['cels'][string]; after: EditorDoc['cels'][string]; label: string } | null;
 }
@@ -62,9 +65,9 @@ export function initialState(doc?: EditorDoc): EditorState {
     doc: d, history: emptyHistory(), dirty: false, frame: 0, layerId: d.layers[d.layers.length - 1].id, picked: [0],
     tool: 'pencil', opts: DEFAULT_OPTS, primary: '#1a1420', secondary: '#ffffff',
     selection: null, floating: null,
-    view: { zoom: 0, panX: 0, panY: 0, grid: false, showPivot: true, bg: 'checker' },
+    view: { zoom: 0, panX: 0, panY: 0, grid: false, showPivot: true, bg: 'checker', showBoxes: true },
     onion: { on: false, prev: 1, next: 1, tint: true, opacity: 0.35 },
-    paletteLock: false, playing: false, source: { assetId: null }, reference: null, lastEdit: null,
+    paletteLock: false, playing: false, source: { assetId: null }, reference: null, boxKind: 'hurtboxes', selectedBox: null, lastEdit: null,
   };
 }
 
@@ -130,7 +133,7 @@ export function useEditor() {
       if (opts.extend) { const a = Math.min(s.frame, f), b = Math.max(s.frame, f); picked = Array.from({ length: b - a + 1 }, (_, i) => a + i); }
       else if (opts.toggle) picked = s.picked.includes(f) ? s.picked.filter(x => x !== f) : [...s.picked, f].sort((a, b) => a - b);
       else picked = [f];
-      return { ...s, frame: opts.extend ? s.frame : f, picked: picked.length ? picked : [f], floating: null };
+      return { ...s, frame: opts.extend ? s.frame : f, picked: picked.length ? picked : [f], floating: null, selectedBox: null };
     });
   }, []);
 

@@ -1,6 +1,6 @@
 import { hardenAlpha, snapToPalette, type PixelImage } from '@kinetome/core';
 import { addOutline, estimateBackground, removeBackground, removeOrphans, useHoles, type Background } from '@kinetome/pixel';
-import { blank, cloneImage, composite, getCel, withCel, type EditorDoc } from './doc.ts';
+import { blank, cloneImage, composite, getCel, mapBoxes, withCel, type EditorDoc } from './doc.ts';
 import { opaqueBounds, replaceColor, resizeCanvas, scaleNearest, shift, type RGBA } from './raster.ts';
 
 /**
@@ -92,6 +92,7 @@ export function alignFrames(doc: EditorDoc, frames: number[], mode: 'feet' | 'ce
       const cel = getCel(doc, l.id, doc.frames[i].id);
       if (cel) next = withCel(next, l.id, doc.frames[i].id, shift(cel, dx, dy));
     }
+    next = mapBoxes(next, b => ({ ...b, x: b.x + dx, y: b.y + dy }), new Set([i]));
   }
   return next;
 }
@@ -115,7 +116,7 @@ export function trimCanvas(doc: EditorDoc, margin = 1): EditorDoc {
   x0 = Math.max(0, x0 - margin); y0 = Math.max(0, y0 - margin);
   x1 = Math.min(doc.width - 1, x1 + margin); y1 = Math.min(doc.height - 1, y1 + margin);
   const w = x1 - x0 + 1, h = y1 - y0 + 1;
-  const next = mapAll(doc, img => resizeCanvas(img, w, h, -x0, -y0), w, h);
+  const next = mapBoxes(mapAll(doc, img => resizeCanvas(img, w, h, -x0, -y0), w, h), b => ({ ...b, x: b.x - x0, y: b.y - y0 }));
   return { ...next, pivot: { x: Math.max(0, Math.min(w - 1, doc.pivot.x - x0)), y: Math.max(0, Math.min(h - 1, doc.pivot.y - y0)) } };
 }
 
@@ -126,14 +127,15 @@ export function resizeDoc(doc: EditorDoc, w: number, h: number, anchor: Anchor9 
   const fx = anchor.endsWith('l') ? 0 : anchor.endsWith('r') ? 1 : 0.5;
   const fy = anchor.startsWith('t') ? 0 : anchor.startsWith('b') ? 1 : 0.5;
   const ox = Math.round((w - doc.width) * fx), oy = Math.round((h - doc.height) * fy);
-  const next = mapAll(doc, img => resizeCanvas(img, w, h, ox, oy), w, h);
+  const next = mapBoxes(mapAll(doc, img => resizeCanvas(img, w, h, ox, oy), w, h), b => ({ ...b, x: b.x + ox, y: b.y + oy }));
   return { ...next, pivot: { x: Math.max(0, Math.min(w - 1, doc.pivot.x + ox)), y: Math.max(0, Math.min(h - 1, doc.pivot.y + oy)) } };
 }
 
 /** Integer-friendly nearest-neighbour scale of the whole document. */
 export function scaleDoc(doc: EditorDoc, factor: number): EditorDoc {
   const w = Math.max(1, Math.round(doc.width * factor)), h = Math.max(1, Math.round(doc.height * factor));
-  const next = mapAll(doc, img => scaleNearest(img, w, h), w, h);
+  const sx = w / doc.width, sy = h / doc.height;
+  const next = mapBoxes(mapAll(doc, img => scaleNearest(img, w, h), w, h), b => ({ x: Math.round(b.x * sx), y: Math.round(b.y * sy), w: Math.max(1, Math.round(b.w * sx)), h: Math.max(1, Math.round(b.h * sy)) }));
   return { ...next, pivot: { x: Math.min(w - 1, Math.round(doc.pivot.x * factor)), y: Math.min(h - 1, Math.round((doc.pivot.y + 1) * factor) - 1) } };
 }
 

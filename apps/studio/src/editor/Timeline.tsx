@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PixelImage } from '@kinetome/core';
 import { Icon } from '../icons.tsx';
-import { addFrame, addTag, composite, getCel, moveFrames, patchTag, removeFrames, removeTag, setDurations, type EditorDoc } from './model.ts';
+import { addFrame, addTag, composite, getCel, moveFrames, patchFrameMeta, patchTag, removeFrames, removeTag, setDurations, type EditorDoc } from './model.ts';
+
+/** Events games commonly listen for; spawn:<effect> plays a Kinetome effect in the playtest. */
+const EVENT_SUGGESTIONS = ['impact', 'footstep', 'spawn:slash', 'spawn:spark', 'spawn:dust', 'spawn:leaves', 'spawn:magic', 'sound:swing', 'sound:hit', 'invulnerable', 'can_cancel'];
 import type { EditorApi } from './useEditor.ts';
 
 const thumbCache = new WeakMap<PixelImage, HTMLCanvasElement>();
@@ -46,6 +49,8 @@ export function Timeline({ ed }: { ed: EditorApi }) {
   const { doc, frame, picked, onion } = state;
   const [drag, setDrag] = useState<number | null>(null);
   const [editTag, setEditTag] = useState<string | null>(null);
+  const [evFrame, setEvFrame] = useState<number | null>(null);
+  const [evDraft, setEvDraft] = useState('');
   const cell = 44;
   const pick = [...picked].sort((a, b) => a - b);
   const contiguous = pick.every((v, i) => i === 0 || v === pick[i - 1] + 1);
@@ -115,6 +120,18 @@ export function Timeline({ ed }: { ed: EditorApi }) {
             ))}
           </div>
 
+          {/* events lane: what fires when each frame starts */}
+          <div className="ed-tl-label dim small" title="Frame events: impact, footstep, spawn:slash…">Events</div>
+          {doc.frames.map((f, i) => {
+            const ev = f.meta?.events ?? [];
+            return (
+              <button key={f.id} className={`ed-ev${evFrame === i ? ' on' : ''}${ev.length ? ' has' : ''}`} onClick={() => { setEvFrame(evFrame === i ? null : i); setEditTag(null); setEvDraft(''); }}
+                title={ev.length ? `Frame ${i + 1}: ${ev.join(', ')}` : `Add an event on frame ${i + 1}`} aria-label={`Events on frame ${i + 1}`}>
+                {ev.length ? <span className="ed-ev-mark">{ev.length > 1 ? ev.length : '◆'}</span> : null}
+              </button>
+            );
+          })}
+
           {/* frame thumbnails */}
           <div className="ed-tl-label dim small">Frames</div>
           {doc.frames.map((f, i) => (
@@ -148,6 +165,25 @@ export function Timeline({ ed }: { ed: EditorApi }) {
         </div>
       </div>
 
+      {evFrame !== null && doc.frames[evFrame] && (() => {
+        const list = doc.frames[evFrame].meta?.events ?? [];
+        const setEvents = (events: string[], label: string) => ed.commit(label, patchFrameMeta(ed.ref.current.doc, evFrame, m => ({ ...m, events })));
+        const add = (name: string) => { const n = name.trim(); if (n && !list.includes(n)) setEvents([...list, n], 'Add event'); setEvDraft(''); };
+        return (
+          <div className="ed-tag-edit">
+            <span className="ed-ev-mark big">◆</span>
+            <span className="small">Frame {evFrame + 1} events</span>
+            {list.map(e => <span key={e} className="chip active ed-ev-chip">{e}<button className="icon" onClick={() => setEvents(list.filter(x => x !== e), 'Remove event')} aria-label={`Remove ${e}`}>×</button></span>)}
+            <input list="ev-suggest" value={evDraft} onChange={e => setEvDraft(e.target.value)} placeholder="impact, footstep, spawn:slash…" aria-label="New event"
+              onKeyDown={e => { if (e.key === 'Enter') add(evDraft); }} />
+            <datalist id="ev-suggest">{EVENT_SUGGESTIONS.map(x => <option key={x} value={x} />)}</datalist>
+            <button className="small" onClick={() => add(evDraft)} disabled={!evDraft.trim()}>Add</button>
+            <span className="dim small">fires when the frame starts · exported to Godot</span>
+            <div className="spacer" />
+            <button className="icon-btn" onClick={() => setEvFrame(null)} aria-label="Close"><Icon name="x" /></button>
+          </div>
+        );
+      })()}
       {tag && (
         <div className="ed-tag-edit">
           <Icon name="tag" />

@@ -1,5 +1,5 @@
-import { normalizeFrames, packGrid, type Animation, type PixelImage, type Rect, type SpriteAsset } from '@kinetome/core';
-import { blank, composite, docFromFrames, type EditorDoc, type Tag } from './doc.ts';
+import { normalizeFrames, packGrid, type Animation, type FrameMeta, type PixelImage, type Rect, type SpriteAsset } from '@kinetome/core';
+import { blank, composite, docFromFrames, hasMeta, type EditorDoc, type Tag } from './doc.ts';
 
 /**
  * Slicing a sheet into frames (the Aseprite "Import Sprite Sheet" dialog and more):
@@ -71,7 +71,7 @@ export function framesFromRects(sheet: PixelImage, rects: Rect[], align: Align =
 }
 
 /** Opens a library asset: one layer, one frame per used sheet frame, tags from its animations. */
-export function docFromAsset(sheet: PixelImage, asset: Pick<SpriteAsset, 'name' | 'frames' | 'animations' | 'pivot' | 'frameWidth' | 'frameHeight'>, palette: string[] = []): EditorDoc {
+export function docFromAsset(sheet: PixelImage, asset: Pick<SpriteAsset, 'name' | 'frames' | 'animations' | 'pivot' | 'frameWidth' | 'frameHeight' | 'frameData'>, palette: string[] = []): EditorDoc {
   const order: number[] = [];
   const tags: Omit<Tag, 'id' | 'color'>[] = [];
   const durations: number[] = [];
@@ -88,7 +88,10 @@ export function docFromAsset(sheet: PixelImage, asset: Pick<SpriteAsset, 'name' 
     return out;
   });
   const doc = docFromFrames(frames, { name: asset.name, pivot: asset.pivot, tags, palette });
-  return { ...doc, frames: doc.frames.map((f, i) => ({ ...f, duration: durations[i] ?? 100 })) };
+  return { ...doc, frames: doc.frames.map((f, i) => {
+    const meta = asset.frameData?.[String(order[i])];
+    return { ...f, duration: durations[i] ?? 100, ...(meta ? { meta: structuredClone(meta) } : {}) };
+  }) };
 }
 
 export interface SheetExport {
@@ -98,6 +101,8 @@ export interface SheetExport {
   frameHeight: number;
   pivot: { x: number; y: number };
   animations: Animation[];
+  /** Hitboxes, hurtboxes and events per output frame (only frames that have any). */
+  frameData: Record<string, FrameMeta>;
 }
 
 /**
@@ -133,5 +138,7 @@ export function docToSheet(doc: EditorDoc): SheetExport {
     while (used.has(name)) name = `default-${k++}`;
     animations.push({ name, frames: untagged, fps: Math.round(untagged.reduce((s, i) => s + 1000 / doc.frames[i].duration, 0) / untagged.length) || 10, loop: true });
   }
-  return { sheet, rects: layout.rects, frameWidth: doc.width, frameHeight: doc.height, pivot: doc.pivot, animations };
+  const frameData: Record<string, FrameMeta> = {};
+  doc.frames.forEach((f, i) => { if (hasMeta(f.meta)) frameData[String(i)] = f.meta!; });
+  return { sheet, rects: layout.rects, frameWidth: doc.width, frameHeight: doc.height, pivot: doc.pivot, animations, frameData };
 }

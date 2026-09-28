@@ -79,10 +79,10 @@ export async function saveToLibrary(projectId: string, doc: EditorDoc, existing:
   const out = docToSheet(doc);
   const png = await imageToPng(out.sheet);
   const saved = existing
-    ? await api.updateAsset(projectId, { ...existing, name: draft.name, frameWidth: out.frameWidth, frameHeight: out.frameHeight, frames: out.rects, pivot: out.pivot, animations: out.animations }, png)
+    ? await api.updateAsset(projectId, { ...existing, name: draft.name, frameWidth: out.frameWidth, frameHeight: out.frameHeight, frames: out.rects, pivot: out.pivot, animations: out.animations, frameData: out.frameData }, png)
     : await api.createAsset(projectId, {
       name: draft.name, kind: draft.kind, source: 'imported', description: '',
-      frameWidth: out.frameWidth, frameHeight: out.frameHeight, frames: out.rects, pivot: out.pivot, animations: out.animations, tags: ['edited'], reference: false,
+      frameWidth: out.frameWidth, frameHeight: out.frameHeight, frames: out.rects, pivot: out.pivot, animations: out.animations, frameData: out.frameData, tags: ['edited'], reference: false,
     }, png);
   const meta: EditMeta = { version: 1, name: draft.name, width: doc.width, height: doc.height, pivot: doc.pivot, palette: doc.palette, layers: doc.layers, frames: doc.frames, tags: doc.tags, assetUpdatedAt: saved.updatedAt };
   const f = new FormData();

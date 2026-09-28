@@ -15,7 +15,7 @@ import { OptionsBar, ToolBar } from './Tools.tsx';
 import { blobToPixels, downloadFramePng, downloadGif, downloadSheet, openAsset, saveToLibrary } from './io.ts';
 import { Preview } from './Preview.tsx';
 import {
-  clearSelected, createDoc, editableCel, extract, invert, isEmpty, playRange, resizeDoc, scaleDoc, scaleNearest, tagOf,
+  clearSelected, createDoc, editableCel, patchFrameMeta, extract, invert, isEmpty, playRange, resizeDoc, scaleDoc, scaleNearest, tagOf,
   transformFloating, trimCanvas, withCel, type Anchor9, type EditorDoc, type Floating,
 } from './model.ts';
 import { useEditor, type Tool } from './useEditor.ts';
@@ -166,6 +166,12 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
     if (mod) return;
     if (e.key === 'Enter') { e.preventDefault(); if (s.floating) ed.settle(); else ed.set({ playing: !s.playing }); return; }
     if (e.key === 'Escape') { if (s.floating) ed.settle(); ed.set({ selection: null }); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && s.tool === 'boxes' && s.selectedBox) {
+      e.preventDefault();
+      const sb = s.selectedBox;
+      ed.commit('Delete box', patchFrameMeta(s.doc, s.frame, m => ({ ...m, [sb.kind]: m[sb.kind].filter((_, i) => i !== sb.index) })), { selectedBox: null });
+      return;
+    }
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
       if (s.floating) { ed.set({ floating: null }); return; }
@@ -195,7 +201,7 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
     if (s.floating && (k === 'v' && e.shiftKey)) { ed.set({ floating: transformFloating(s.floating, 'flip-v') }); return; }
     if (s.floating && k === 'r') { ed.set({ floating: transformFloating(s.floating, e.shiftKey ? 'rot-ccw' : 'rot-cw') }); return; }
     if (e.altKey && k === 'n') return;
-    const map: Record<string, Tool> = { b: 'pencil', e: 'eraser', d: 'shade', g: 'bucket', i: 'picker', l: 'line', m: 'select', q: 'lasso', w: 'wand', v: 'move', h: 'hand' };
+    const map: Record<string, Tool> = { b: 'pencil', e: 'eraser', d: 'shade', y: 'boxes', g: 'bucket', i: 'picker', l: 'line', m: 'select', q: 'lasso', w: 'wand', v: 'move', h: 'hand' };
     if (k === 'u') { ed.set({ tool: e.shiftKey ? 'ellipse' : 'rect' }); return; }
     if (map[k]) { if (map[k] !== 'move') ed.settle(); ed.set({ tool: map[k] }); }
   };
@@ -379,6 +385,7 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
         )}
         <div className="spacer" />
         <button className={state.view.grid ? 'chip active' : 'chip'} onClick={() => ed.set(s => ({ view: { ...s.view, grid: !s.view.grid } }))} title="Pixel grid (Ctrl+')"><Icon name="grid" size={12} /> Grid</button>
+        <button className={state.view.showBoxes ? 'chip active' : 'chip'} onClick={() => ed.set(s => ({ view: { ...s.view, showBoxes: !s.view.showBoxes } }))} title="Show hitboxes and hurtboxes"><Icon name="hitbox" size={12} /> Boxes</button>
         <button className={state.view.showPivot ? 'chip active' : 'chip'} onClick={() => ed.set(s => ({ view: { ...s.view, showPivot: !s.view.showPivot } }))} title="Pivot and ground line"><Icon name="pivot" size={12} /> Pivot</button>
         <select className="compact" value={state.view.bg} onChange={e => ed.set(s => ({ view: { ...s.view, bg: e.target.value as 'checker' | 'dark' | 'light' } }))} aria-label="Canvas background">
           <option value="checker">Checker</option><option value="dark">Dark</option><option value="light">Light</option>

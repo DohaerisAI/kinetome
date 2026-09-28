@@ -1,6 +1,6 @@
 import { Icon, type IconName } from '../icons.tsx';
 import type { EditorApi, Tool } from './useEditor.ts';
-import type { Dither } from './model.ts';
+import { copyFrameMeta, patchFrameMeta, type Dither } from './model.ts';
 
 /** A tiny swatch of the dither pattern itself, drawn with CSS. */
 function DitherSwatch({ level }: { level: Dither }) {
@@ -21,6 +21,7 @@ export const TOOLS: { id: Tool; icon: IconName; label: string; key: string }[] =
   { id: 'lasso', icon: 'lasso', label: 'Lasso', key: 'Q' },
   { id: 'wand', icon: 'wandTool', label: 'Magic wand', key: 'W' },
   { id: 'move', icon: 'move', label: 'Move', key: 'V' },
+  { id: 'boxes', icon: 'hitbox', label: 'Hitboxes', key: 'Y' },
   { id: 'hand', icon: 'hand', label: 'Pan (or hold Space)', key: 'H' },
 ];
 
@@ -30,7 +31,7 @@ export function ToolBar({ ed }: { ed: EditorApi }) {
     <div className="ed-tools" role="toolbar" aria-label="Tools" aria-orientation="vertical">
       {TOOLS.map((t, i) => (
         <span key={t.id} style={{ display: 'contents' }}>
-          {(i === 5 || i === 8 || i === 11) && <span className="ed-tools-sep" />}
+          {(i === 5 || i === 8 || i === 11 || i === 13) && <span className="ed-tools-sep" />}
           <button className={state.tool === t.id ? 'ed-tool active' : 'ed-tool'} onClick={() => { if (t.id !== 'move') ed.settle(); ed.set({ tool: t.id }); }}
             title={`${t.label} (${t.key})`} aria-label={t.label} aria-pressed={state.tool === t.id}>
             <Icon name={t.icon} />
@@ -78,6 +79,21 @@ export function OptionsBar({ ed }: { ed: EditorApi }) {
           ))}
         </span>
       )}
+      {t === 'boxes' && (() => {
+        const meta = state.doc.frames[state.frame]?.meta;
+        const targets = state.picked.filter(i => i !== state.frame);
+        return (
+          <>
+            <span className="seg compact" role="radiogroup" aria-label="Box kind">
+              <button role="radio" aria-checked={state.boxKind === 'hurtboxes'} className={state.boxKind === 'hurtboxes' ? 'active' : ''} onClick={() => ed.set({ boxKind: 'hurtboxes' })} title="Where the character can be hit (its body)"><span className="ed-box-dot hurt" /> Hurtbox</button>
+              <button role="radio" aria-checked={state.boxKind === 'hitboxes'} className={state.boxKind === 'hitboxes' ? 'active' : ''} onClick={() => ed.set({ boxKind: 'hitboxes' })} title="Where this frame hits (the attack)"><span className="ed-box-dot hit" /> Hitbox</button>
+            </span>
+            <span className="dim small">{meta ? `${meta.hurtboxes.length} hurt · ${meta.hitboxes.length} hit` : 'drag to draw · click a box to select, drag to move, Delete removes'}</span>
+            <button className="small" disabled={!targets.length || !meta?.hurtboxes.length} onClick={() => ed.commit('Copy hurtboxes', copyFrameMeta(state.doc, state.frame, targets, { hurtboxes: true }))} title="Pick frames in the timeline first (Shift/Ctrl-click)">Copy hurtboxes to {targets.length || 'picked'} frames</button>
+            <button className="small" disabled={!meta?.hitboxes.length && !meta?.hurtboxes.length} onClick={() => ed.commit('Clear boxes', patchFrameMeta(state.doc, state.frame, m => ({ ...m, hitboxes: [], hurtboxes: [] })), { selectedBox: null })}>Clear frame</button>
+          </>
+        );
+      })()}
       {t === 'shade' && <span className="dim small">Left = lighter · right = darker · {state.doc.palette.length >= 2 ? 'steps along your palette, staying in each color’s hue family' : 'hue-shifted (warm lights, cool shadows); add a palette to shade along its ramps'}</span>}
       {(t === 'bucket' || t === 'wand') && (
         <>

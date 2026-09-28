@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PixelImage } from '@kinetome/core';
 import { useImage } from '../pixels.ts';
 import {
-  applyDither, shadeStroke, blank, clearSelected, cloneImage, combine, composite, drawEllipse, drawLine, drawRect, editableCel, extract, fillMask,
+  applyDither, patchFrameMeta, shadeStroke, blank, clearSelected, cloneImage, combine, composite, drawEllipse, drawLine, drawRect, editableCel, extract, fillMask,
   floatingMask, getCel, getPixel, hexToRgba, linePoints, matchRegion, pixelPerfect, polyMask, rectMask, rgbaToHex, shift,
   stamp, stampFloating, withCel, type EditorDoc, type Floating, type RGBA,
 } from './model.ts';
@@ -23,6 +23,8 @@ interface Gesture {
   lifted?: boolean;        // this gesture lifted the selection out of the cel
   panStart?: { x: number; y: number; px: number; py: number };
   selectMode: 'replace' | 'add' | 'subtract' | 'intersect';
+  /** Hitbox tool: dragging an existing box (its kind/index and where it started). */
+  boxDrag?: { kind: 'hitboxes' | 'hurtboxes'; index: number; x: number; y: number };
 }
 
 const toCanvas = (img: PixelImage) => {
@@ -187,6 +189,29 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
       ctx.beginPath(); ctx.moveTo(ox - 10, py + 0.5); ctx.lineTo(ox + W + 10, py + 0.5); ctx.moveTo(px + 0.5, py - 8); ctx.lineTo(px + 0.5, py + 8); ctx.stroke();
     }
 
+    // hitboxes (red) and hurtboxes (blue) of this frame
+    const meta = doc.frames[frame]?.meta;
+    if ((view.showBoxes || state.tool === 'boxes') && meta) {
+      const drawBoxes = (kind: 'hitboxes' | 'hurtboxes', stroke: string, fill: string) => meta[kind].forEach((b, idx) => {
+        const sel = state.selectedBox?.kind === kind && state.selectedBox.index === idx;
+        ctx.fillStyle = fill; ctx.fillRect(ox + b.x * z, oy + b.y * z, b.w * z, b.h * z);
+        ctx.strokeStyle = stroke; ctx.lineWidth = sel ? 2 : 1;
+        ctx.strokeRect(ox + b.x * z + 0.5, oy + b.y * z + 0.5, b.w * z - 1, b.h * z - 1);
+        ctx.lineWidth = 1;
+        if (sel) { ctx.fillStyle = stroke; for (const [hx, hy] of [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]]) ctx.fillRect(ox + hx * z - 3, oy + hy * z - 3, 6, 6); }
+      });
+      drawBoxes('hurtboxes', 'rgba(80,200,255,.95)', 'rgba(80,200,255,.12)');
+      drawBoxes('hitboxes', 'rgba(255,70,110,.95)', 'rgba(255,70,110,.16)');
+    }
+    const bg = gesture.current;
+    if (bg && bg.tool === 'boxes' && !bg.boxDrag) {
+      const [ax, ay] = bg.start, [bx, by] = bg.last;
+      ctx.strokeStyle = state.boxKind === 'hitboxes' ? 'rgba(255,70,110,.95)' : 'rgba(80,200,255,.95)';
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(ox + Math.min(ax, bx) * z + 0.5, oy + Math.min(ay, by) * z + 0.5, (Math.abs(bx - ax) + 1) * z - 1, (Math.abs(by - ay) + 1) * z - 1);
+      ctx.setLineDash([]);
+    }
+
     // selection outline (marching ants)
     const sel = state.floating ? floatingMask(state.floating, doc.width, doc.height) : state.selection;
     if (sel) {
@@ -309,6 +334,20 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     if (tool === 'hand') g.panStart = { x: e.clientX, y: e.clientY, px: s.view.panX, py: s.view.panY };
     gesture.current = g;
 
+    if (tool === 'boxes') {
+      // click inside a box selects it (and drags it); anywhere else draws a new one
+      const m = f.meta;
+      const inside = (b: { x: number; y: number; w: number; h: number }) => p[0] >= b.x && p[1] >= b.y && p[0] < b.x + b.w && p[1] < b.y + b.h;
+      const order: ('hitboxes' | 'hurtboxes')[] = s.boxKind === 'hitboxes' ? ['hitboxes', 'hurtboxes'] : ['hurtboxes', 'hitboxes'];
+      for (const kind of order) {
+        const idx = m?.[kind].findIndex(inside) ?? -1;
+        if (idx >= 0) { g.boxDrag = { kind, index: idx, x: m![kind][idx].x, y: m![kind][idx].y }; ed.set({ selectedBox: { kind, index: idx }, boxKind: kind }); break; }
+      }
+      if (!g.boxDrag) ed.set({ selectedBox: null });
+      redraw();
+      return;
+    }
+
     if (tool === 'pencil' || tool === 'eraser' || tool === 'shade') paintStroke(g);
     else if (tool === 'picker') {
       const c = getPixel(sampleImage({ ...s, opts: { ...s.opts, sampleAll: true } }), p[0], p[1]);
@@ -348,6 +387,14 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     if (g.tool === 'hand' && g.panStart) { ed.set({ view: { ...s.view, panX: g.panStart.px + e.clientX - g.panStart.x, panY: g.panStart.py + e.clientY - g.panStart.y } }); return; }
     if (p[0] === g.last[0] && p[1] === g.last[1]) return;
     g.last = p;
+    if (g.tool === 'boxes') {
+      if (g.boxDrag) {
+        const d = g.boxDrag, dx = p[0] - g.start[0], dy = p[1] - g.start[1];
+        ed.set(x => ({ doc: patchFrameMeta(x.doc, x.frame, m => ({ ...m, [d.kind]: m[d.kind].map((b, i) => (i === d.index ? { ...b, x: d.x + dx, y: d.y + dy } : b)) })) }));
+      }
+      redraw();
+      return;
+    }
     if (g.tool === 'pencil' || g.tool === 'eraser' || g.tool === 'shade') { g.points.push(p); paintStroke(g); }
     else if (g.tool === 'line' || g.tool === 'rect' || g.tool === 'ellipse') shapePreview(g, e.shiftKey);
     else if (g.tool === 'lasso') g.points.push(p);
@@ -367,6 +414,27 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     const f = s.doc.frames[s.frame];
     if (!f) return;
     const label = { pencil: 'Draw', eraser: 'Erase', shade: 'Shade', line: 'Line', rect: 'Rectangle', ellipse: 'Ellipse', move: 'Move' }[g.tool as string];
+    if (g.tool === 'boxes') {
+      if (g.boxDrag) {
+        // one undo step for the whole drag: commit the moved box against the doc from before it
+        if (g.start[0] !== g.last[0] || g.start[1] !== g.last[1]) {
+          const moved = s.doc;
+          const d = g.boxDrag;
+          const before = patchFrameMeta(moved, s.frame, m => ({ ...m, [d.kind]: m[d.kind].map((b, i) => (i === d.index ? { ...b, x: d.x, y: d.y } : b)) }));
+          ed.set({ doc: before });
+          ed.commit('Move box', moved);
+        }
+      } else if (g.start[0] !== g.last[0] || g.start[1] !== g.last[1]) {
+        const x0 = Math.max(0, Math.min(g.start[0], g.last[0])), y0 = Math.max(0, Math.min(g.start[1], g.last[1]));
+        const x1 = Math.min(s.doc.width - 1, Math.max(g.start[0], g.last[0])), y1 = Math.min(s.doc.height - 1, Math.max(g.start[1], g.last[1]));
+        if (x1 >= x0 && y1 >= y0) {
+          const kind = s.boxKind, count = s.doc.frames[s.frame].meta?.[kind].length ?? 0;
+          ed.commit(kind === 'hitboxes' ? 'Add hitbox' : 'Add hurtbox', patchFrameMeta(s.doc, s.frame, m => ({ ...m, [kind]: [...m[kind], { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 }] })), { selectedBox: { kind, index: count } });
+        }
+      }
+      redraw();
+      return;
+    }
     if (g.tool === 'select') {
       const click = g.start[0] === g.last[0] && g.start[1] === g.last[1];
       if (click && g.selectMode === 'replace') ed.set({ selection: null });
@@ -424,7 +492,7 @@ export function Canvas({ ed, onPickColor }: { ed: EditorApi; onPickColor: (hex: 
     return () => el.removeEventListener('wheel', h);
   }, []);
 
-  const cursor = space || state.tool === 'hand' ? (gesture.current ? 'grabbing' : 'grab') : state.tool === 'move' ? 'move' : state.tool === 'picker' ? 'copy' : 'crosshair';
+  const cursor = state.tool === 'boxes' ? 'crosshair' : space || state.tool === 'hand' ? (gesture.current ? 'grabbing' : 'grab') : state.tool === 'move' ? 'move' : state.tool === 'picker' ? 'copy' : 'crosshair';
 
   return (
     <div className="ed-stage" ref={wrap}>

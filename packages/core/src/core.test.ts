@@ -235,3 +235,26 @@ test('rig parts: cut from the reference, moved, rotated, flipped', async () => {
   assert.equal(at(c, 3, 5), 255, JSON.stringify([...Array(16)].map((_, y) => [...Array(16)].map((_, x) => at(c, x, y) ? '#' : '.').join('')).join('/')));
   assert.equal(at(c, 5, 9), 0);
 });
+
+test('godot export: frame data script + Hitbox/Hurtbox areas only when the sprite has game data', async () => {
+  const { godotFiles, frameDataScript } = await import('./index.ts');
+  const base = {
+    version: 1 as const, id: 'hero', name: 'Hero', kind: 'character' as const, source: 'code' as const, image: 'sheet.png',
+    frameWidth: 32, frameHeight: 32, frames: [{ x: 0, y: 0, w: 32, h: 32 }, { x: 32, y: 0, w: 32, h: 32 }], pivot: { x: 16, y: 31 },
+    animations: [{ name: 'attack', frames: [0, 1], fps: 12, loop: false }], tags: [], description: '', reference: false,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+  };
+  assert.equal(godotFiles(base, new Uint8Array([1])).length, 3, 'no script without game data');
+  const withData = { ...base, frameData: { '1': { hitboxes: [{ x: 20, y: 10, w: 8, h: 4 }], hurtboxes: [], events: ['impact'] } } };
+  const files = godotFiles(withData, new Uint8Array([1]));
+  assert.deepEqual(files.map(f => f.path.split('/').pop()), ['hero.png', 'hero.tres', 'hero.tscn', 'hero.gd']);
+  const tscn = files[2].text!;
+  assert.match(tscn, /load_steps=3/);
+  assert.match(tscn, /\[ext_resource type="Script" path="res:\/\/sprites\/hero\/hero.gd" id="2_data"\]/);
+  assert.match(tscn, /\[node name="Hitbox" type="Area2D" parent="\."\]/);
+  const gd = frameDataScript(withData);
+  assert.match(gd, /^extends AnimatedSprite2D/);
+  assert.match(gd, /"attack": \[\n\t\t\{"hit": \[\], "hurt": \[\], "events": \[\]\},\n\t\t\{"hit": \[Rect2\(20, 10, 8, 4\)\], "hurt": \[\], "events": \["impact"\]\}/);
+  assert.match(gd, /const FRAME_W := 32/);
+  assert.ok(!/ {4}/.test(gd.split('\n').filter(l => !l.startsWith('##')).join('\n')), 'GDScript indents with tabs');
+});

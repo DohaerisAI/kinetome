@@ -285,3 +285,31 @@ test('gif: frames decode back to the same pixels, scaled, with delays and transp
   }
   assert.equal(f.idx.length, 120 * 90);
 });
+
+// ---------- frame game data ----------
+import { copyFrameMeta, patchFrameMeta } from './index.ts';
+
+test('frame meta: boxes/events survive export, follow resize/trim/scale, duplicate and copy', () => {
+  let doc = createDoc(20, 20, 3, 'hb');
+  doc = withCel(doc, doc.layers[0].id, doc.frames[0].id, (() => { const c = blank(20, 20); drawRect(c, 5, 5, 14, 19, RED, true); return c; })());
+  doc = patchFrameMeta(doc, 1, m => ({ ...m, hitboxes: [{ x: 10, y: 4, w: 6, h: 3 }], events: ['impact'] }));
+  doc = patchFrameMeta(doc, 0, m => ({ ...m, hurtboxes: [{ x: 5, y: 5, w: 10, h: 15 }] }));
+  const out = docToSheet(doc);
+  assert.deepEqual(Object.keys(out.frameData).sort(), ['0', '1']);
+  assert.deepEqual(out.frameData['1'].events, ['impact']);
+  // round trip through an asset
+  const back = docFromAsset(out.sheet, { name: 'hb', frames: out.rects, animations: out.animations, pivot: out.pivot, frameWidth: out.frameWidth, frameHeight: out.frameHeight, frameData: out.frameData });
+  assert.deepEqual(back.frames[1].meta?.hitboxes, [{ x: 10, y: 4, w: 6, h: 3 }]);
+  // canvas ops move boxes with the pixels
+  const bigger = resizeDoc(doc, 30, 30, 'br');
+  assert.deepEqual(bigger.frames[1].meta?.hitboxes[0], { x: 20, y: 14, w: 6, h: 3 });
+  const trimmed = trimCanvas(doc, 0);
+  assert.deepEqual(trimmed.frames[0].meta?.hurtboxes[0], { x: 0, y: 0, w: 10, h: 15 });
+  const scaled = scaleDoc(doc, 2);
+  assert.deepEqual(scaled.frames[1].meta?.hitboxes[0], { x: 20, y: 8, w: 12, h: 6 });
+  const dup = addFrame(doc, 1, true);
+  assert.deepEqual(dup.doc.frames[2].meta?.events, ['impact']);
+  const copied = copyFrameMeta(doc, 0, [1, 2], { hurtboxes: true });
+  assert.equal(copied.frames[2].meta?.hurtboxes.length, 1);
+  assert.deepEqual(copied.frames[1].meta?.events, ['impact'], 'events untouched when not copied');
+});

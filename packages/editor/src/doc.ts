@@ -1,4 +1,4 @@
-import type { PixelImage } from '@kinetome/core';
+import type { Box, FrameMeta, PixelImage } from '@kinetome/core';
 
 /**
  * The editor document, modelled like Aseprite/Pixelorama: frames x layers, where each
@@ -8,7 +8,13 @@ import type { PixelImage } from '@kinetome/core';
  */
 
 export interface Layer { id: string; name: string; visible: boolean; locked: boolean; opacity: number }
-export interface Frame { id: string; /** Display time in ms. */ duration: number }
+export interface Frame {
+  id: string;
+  /** Display time in ms. */
+  duration: number;
+  /** Game data: hitboxes (attack), hurtboxes (body) and events, in frame pixels. */
+  meta?: FrameMeta;
+}
 /** A named animation over a frame range (inclusive), like Aseprite tags. */
 export interface Tag { id: string; name: string; from: number; to: number; loop: boolean; color: string }
 
@@ -164,7 +170,7 @@ export function mergeDown(doc: EditorDoc, id: string): EditorDoc {
 /** Inserts frames after `after` (index); `duplicate` copies that frame's cels. */
 export function addFrame(doc: EditorDoc, after: number, duplicate = false): { doc: EditorDoc; index: number } {
   const src = doc.frames[after];
-  const frame: Frame = { id: uid('f'), duration: src?.duration ?? 100 };
+  const frame: Frame = { id: uid('f'), duration: src?.duration ?? 100, ...(duplicate && src?.meta ? { meta: structuredClone(src.meta) } : {}) };
   const frames = [...doc.frames];
   frames.splice(after + 1, 0, frame);
   const cels = { ...doc.cels };
@@ -197,6 +203,40 @@ export function moveFrames(doc: EditorDoc, from: number, count: number, to: numb
 export function setDurations(doc: EditorDoc, indices: number[], ms: number): EditorDoc {
   const set = new Set(indices);
   return { ...doc, frames: doc.frames.map((f, i) => (set.has(i) ? { ...f, duration: Math.max(10, Math.round(ms)) } : f)) };
+}
+
+// ---------- frame game data (hitboxes, hurtboxes, events) ----------
+
+export const emptyMeta = (): FrameMeta => ({ hitboxes: [], hurtboxes: [], events: [] });
+export const hasMeta = (m?: FrameMeta) => !!m && (m.hitboxes.length > 0 || m.hurtboxes.length > 0 || m.events.length > 0);
+
+export function patchFrameMeta(doc: EditorDoc, index: number, fn: (m: FrameMeta) => FrameMeta): EditorDoc {
+  return { ...doc, frames: doc.frames.map((f, i) => (i === index ? { ...f, meta: fn(f.meta ?? emptyMeta()) } : f)) };
+}
+
+/** Copies one frame's boxes and/or events onto other frames (e.g. the same hurtbox everywhere). */
+export function copyFrameMeta(doc: EditorDoc, from: number, targets: number[], what: { hitboxes?: boolean; hurtboxes?: boolean; events?: boolean }): EditorDoc {
+  const src = doc.frames[from]?.meta ?? emptyMeta();
+  const set = new Set(targets.filter(t => t !== from));
+  return {
+    ...doc,
+    frames: doc.frames.map((f, i) => {
+      if (!set.has(i)) return f;
+      const m = f.meta ?? emptyMeta();
+      return { ...f, meta: {
+        hitboxes: what.hitboxes ? structuredClone(src.hitboxes) : m.hitboxes,
+        hurtboxes: what.hurtboxes ? structuredClone(src.hurtboxes) : m.hurtboxes,
+        events: what.events ? [...src.events] : m.events,
+      } };
+    }),
+  };
+}
+
+/** Applies a box transform to every frame's boxes (canvas resize, trim, scale, align). */
+export function mapBoxes(doc: EditorDoc, fn: (b: Box, frameIndex: number) => Box | null, only?: Set<number>): EditorDoc {
+  if (!doc.frames.some(f => f.meta && (f.meta.hitboxes.length || f.meta.hurtboxes.length))) return doc;
+  const move = (list: Box[], i: number) => list.map(b => fn(b, i)).filter((b): b is Box => !!b && b.w > 0 && b.h > 0);
+  return { ...doc, frames: doc.frames.map((f, i) => (f.meta && (!only || only.has(i)) ? { ...f, meta: { ...f.meta, hitboxes: move(f.meta.hitboxes, i), hurtboxes: move(f.meta.hurtboxes, i) } } : f)) };
 }
 
 // ---------- tags ----------
