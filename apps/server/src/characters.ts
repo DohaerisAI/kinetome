@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs';
 import { Hono, type Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -73,6 +74,23 @@ const hasPrograms = (d: CharacterDesign) => !!d.code || Object.keys(d.programs).
 
 const refsDir = (p: string, c: string, m: string) => join(store.projectPath(p), 'characters', c, 'refs', m);
 
+/**
+ * Where a move's reference image really is. Files live under the move's id, but a move can
+ * be renamed after its images were added; then the file is found in its old folder by its
+ * (unique, timestamped) name and moved to the right one, so Claude always gets a real path.
+ */
+function refPath(p: string, c: string, m: string, f: string): string {
+  const want = join(refsDir(p, c, m), f);
+  if (existsSync(want)) return want;
+  const root = join(store.projectPath(p), 'characters', c, 'refs');
+  for (const dir of existsSync(root) ? readdirSync(root) : []) {
+    const old = join(root, dir, f);
+    if (!existsSync(old)) continue;
+    try { mkdirSync(refsDir(p, c, m), { recursive: true }); renameSync(old, want); return want; } catch { return old; }
+  }
+  return want;
+}
+
 function codeAnims(d: CharacterDesign, names: string[], projectId: string): CodeAnim[] {
   const wanted = names.length ? names : ['idle'];
   return wanted.map(n => {
@@ -82,7 +100,7 @@ function codeAnims(d: CharacterDesign, names: string[], projectId: string): Code
       name: m.id, frames: m.frames, fps: m.fps, loop: m.loop,
       description: [m.description, m.notes && `Direction: ${m.notes}`].filter(Boolean).join(' '),
       effects: m.effects || undefined,
-      refPaths: m.refImages.map(f => join(refsDir(projectId, d.id, m.id), f)),
+      refPaths: m.refImages.map(f => refPath(projectId, d.id, m.id, f)),
       poses: m.poses.length === m.frames && m.poses.every(x => x.trim()) ? m.poses : (p?.frames === m.frames ? p.poses : []),
     };
     if (p) return { name: p.id, frames: p.frames, fps: p.fps, loop: p.loop, description: '', poses: p.poses };
@@ -327,7 +345,7 @@ characters.post('/projects/:p/characters/:c/moves/:m/refs', async c => {
 characters.get('/projects/:p/characters/:c/moves/:m/refs/:f', async c => {
   const f = c.req.param('f');
   if (!/^[0-9]+\.(png|jpg|webp|gif)$/.test(f)) throw new store.HttpError(400, 'bad file');
-  const buf = await readFile(join(refsDir(c.req.param('p'), c.req.param('c'), c.req.param('m')), f)).catch(() => null);
+  const buf = await readFile(refPath(c.req.param('p'), c.req.param('c'), c.req.param('m'), f)).catch(() => null);
   if (!buf) throw new store.HttpError(404, 'not found');
   const type = f.endsWith('.jpg') ? 'image/jpeg' : f.endsWith('.webp') ? 'image/webp' : f.endsWith('.gif') ? 'image/gif' : 'image/png';
   return c.body(buf, 200, { 'content-type': type, 'cache-control': 'max-age=31536000, immutable' });
@@ -337,6 +355,6 @@ characters.delete('/projects/:p/characters/:c/moves/:m/refs/:f', async c => {
   const p = c.req.param('p'), id = c.req.param('c'), mid = c.req.param('m'), f = c.req.param('f');
   if (!/^[0-9]+\.(png|jpg|webp|gif)$/.test(f)) throw new store.HttpError(400, 'bad file');
   const d = await store.getCharacter(p, id);
-  await rm(join(refsDir(p, id, mid), f), { force: true });
+  await rm(refPath(p, id, mid, f), { force: true });
   return c.json(await store.saveCharacter(p, id, { ...d, moves: d.moves.map(x => (x.id === mid ? { ...x, refImages: x.refImages.filter(r => r !== f) } : x)) }));
 });

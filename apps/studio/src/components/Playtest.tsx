@@ -164,7 +164,8 @@ export function Playtest({ projectId, assets, style, designs, active }: { projec
     const g = off.getContext('2d')!;
     const out = c.getContext('2d')!;
     const animOf = (st: State) => {
-      const name = s.map[st] ?? (st === 'run' ? s.map.walk : st === 'fall' ? s.map.jump : undefined) ?? s.map.idle ?? hero.animations[0].name;
+      // a missing state borrows its closest sibling: walk <-> run, fall -> jump, then idle
+      const name = s.map[st] ?? (st === 'run' ? s.map.walk : st === 'walk' ? s.map.run : st === 'fall' ? s.map.jump : undefined) ?? s.map.idle ?? hero.animations[0].name;
       return hero.animations.find(a => a.name === name) ?? hero.animations[0];
     };
     const frameMeta = (i: number) => hero.frameData?.[String(i)];
