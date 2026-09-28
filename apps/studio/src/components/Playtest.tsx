@@ -26,7 +26,12 @@ function loadSettings(projectId: string, asset: SpriteAsset | null, unit: number
   const names = asset.animations.map(a => a.name);
   const guess = (s: State) => names.find(n => GUESS[s].test(n) && !(s === 'attack' && GUESS.hurt.test(n)));
   base.map = Object.fromEntries(STATES.map(s => [s, guess(s)]).filter(([, v]) => v)) as Settings['map'];
-  try { return { ...base, ...JSON.parse(localStorage.getItem(key(projectId, asset.id)) ?? '{}') }; } catch { return base; }
+  try {
+    const saved = JSON.parse(localStorage.getItem(key(projectId, asset.id)) ?? '{}') as Partial<Settings>;
+    // saved choices win, but only for animations that still exist; new animations get guessed
+    const kept = Object.fromEntries(Object.entries(saved.map ?? {}).filter(([, v]) => v && names.includes(v as string)));
+    return { ...base, ...saved, map: { ...base.map, ...kept } };
+  } catch { return base; }
 }
 
 const lum = (hex: string) => { const n = parseInt(hex.slice(1), 16); return 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255); };

@@ -204,8 +204,44 @@ export function partLayers(ref: PixelImage, parts: RigPart[], own = partOwnershi
 }
 
 /**
- * Draws one pose: each part's layer rotated around its (moved) pivot with nearest
- * sampling, back to front. Pure pixel moves: no new colors, no blur.
+ * Scale2x (EPX): doubles an image while keeping pixel-art edges crisp: a diagonal stays a
+ * clean diagonal instead of a staircase of 2x2 blocks. Three passes give the 8x image
+ * RotSprite rotates from.
+ */
+function scale2x(src: Uint32Array, w: number, h: number): Uint32Array {
+  const out = new Uint32Array(w * h * 4), W2 = w * 2;
+  const at = (x: number, y: number) => src[Math.max(0, Math.min(h - 1, y)) * w + Math.max(0, Math.min(w - 1, x))];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const P = at(x, y), A = at(x, y - 1), B = at(x + 1, y), C = at(x - 1, y), D = at(x, y + 1);
+    let e0 = P, e1 = P, e2 = P, e3 = P;
+    if (C === A && C !== D && A !== B) e0 = A;
+    if (A === B && A !== C && B !== D) e1 = B;
+    if (D === C && D !== B && C !== A) e2 = C;
+    if (B === D && B !== A && D !== C) e3 = D;
+    out[2 * y * W2 + 2 * x] = e0; out[2 * y * W2 + 2 * x + 1] = e1;
+    out[(2 * y + 1) * W2 + 2 * x] = e2; out[(2 * y + 1) * W2 + 2 * x + 1] = e3;
+  }
+  return out;
+}
+
+const upscaled = new WeakMap<Uint8ClampedArray, Uint32Array>();
+/** The part layer at 8x via Scale2x three times (cached per layer). */
+function layer8(layer: Uint8ClampedArray, w: number, h: number): Uint32Array {
+  let up = upscaled.get(layer);
+  if (!up) {
+    up = new Uint32Array(layer.buffer, layer.byteOffset, w * h).slice();
+    let cw = w, ch = h;
+    for (let k = 0; k < 3; k++) { up = scale2x(up, cw, ch); cw *= 2; ch *= 2; }
+    upscaled.set(layer, up);
+  }
+  return up;
+}
+
+/**
+ * Draws one pose: each part's layer rotated around its (moved) pivot, back to front.
+ * Unrotated parts are copied pixel for pixel; rotated ones use RotSprite (sample an 8x
+ * Scale2x upscale), so outlines stay unbroken and no stray pixels scatter. Only the
+ * part's own colors ever appear: no blur, no new colors.
  */
 export function renderPose(ref: PixelImage, parts: RigPart[], pose: RigPose, canvas: RigCanvas = rigCanvas(ref), own = partOwnership(ref, parts), layers = partLayers(ref, parts, own)): PixelImage {
   const { width: W, height: H, pad } = canvas;
@@ -228,14 +264,26 @@ export function renderPose(ref: PixelImage, parts: RigPart[], pose: RigPose, can
     });
     const cx0 = Math.max(0, Math.floor(Math.min(...corners.map(c => c[0]))) - 1), cx1 = Math.min(W - 1, Math.ceil(Math.max(...corners.map(c => c[0]))) + 1);
     const cy0 = Math.max(0, Math.floor(Math.min(...corners.map(c => c[1]))) - 1), cy1 = Math.min(H - 1, Math.ceil(Math.max(...corners.map(c => c[1]))) + 1);
+    // quarter turns are lossless with plain pixel copies; only in-between angles need RotSprite
+    const quarter = Math.abs(((t.angle % 90) + 90) % 90) < 0.01 || Math.abs(((t.angle % 90) + 90) % 90 - 90) < 0.01;
+    const rotated = !quarter;
+    const up = rotated ? layer8(layer, ref.width, ref.height) : null, UW = ref.width * 8;
+    const out32 = new Uint32Array(out.data.buffer);
     for (let y = cy0; y <= cy1; y++) for (let x = cx0; x <= cx1; x++) {
       // inverse map the canvas pixel centre back into the part's layer
       const [sx, sy] = rot(x + 0.5 - pad - t.at[0], y + 0.5 - pad - t.at[1], -t.angle);
-      const rx = Math.floor(sx + p.pivot[0]), ry = Math.floor(sy + p.pivot[1]);
-      if (rx < 0 || ry < 0 || rx >= ref.width || ry >= ref.height) continue;
-      const k = (ry * ref.width + rx) * 4;
-      if (layer[k + 3] < 128) continue;
-      out.data.set(layer.subarray(k, k + 4), (y * W + x) * 4);
+      // + epsilon: at exact quarter turns sample points sit on pixel borders, and float error must not tip them outside
+      const fx = sx + p.pivot[0] + 1e-6, fy = sy + p.pivot[1] + 1e-6;
+      if (fx < 0 || fy < 0 || fx >= ref.width || fy >= ref.height) continue;
+      if (up) {
+        const v = up[Math.floor(fy * 8) * UW + Math.floor(fx * 8)];
+        if ((v >>> 24) < 128) continue;
+        out32[y * W + x] = v;
+      } else {
+        const k = (Math.floor(fy) * ref.width + Math.floor(fx)) * 4;
+        if (layer[k + 3] < 128) continue;
+        out.data.set(layer.subarray(k, k + 4), (y * W + x) * 4);
+      }
     }
   }
   return out;
