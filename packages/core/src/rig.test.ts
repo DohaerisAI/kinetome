@@ -55,3 +55,20 @@ test('rig: in-betweens ease between keys, holds hold, loops wrap back to the fir
   assert.equal(frames.length, 5);
   assert.notDeepEqual(frames[0].data, frames[4].data);
 });
+
+test('rig: the body behind a swung-away limb is underpainted, not a hole', async () => {
+  const { partLayers } = await import('./index.ts');
+  const ref = figure();
+  // an arm drawn ON the body: part of the body's pixels are the arm's
+  const W = ref.width;
+  for (let x = 4; x < 7; x++) ref.data.set([60, 60, 200, 255], (8 * W + x) * 4);
+  const ps: RigPart[] = [
+    { name: 'body', poly: [[3, 1], [8, 1], [8, 16], [3, 16]], pivot: [5, 15], parent: null, z: 0 },
+    { name: 'arm', poly: [[3, 7], [11, 7], [11, 10], [3, 10]], pivot: [5, 8.5], parent: 'body', z: 1 },
+  ];
+  const c = rigCanvas(ref);
+  const moved = renderPose(ref, ps, { arm: { angle: 0, dx: 0, dy: -6 } }, c);
+  const at = (x: number, y: number) => [...moved.data.subarray(((y + c.pad) * c.width + x + c.pad) * 4, ((y + c.pad) * c.width + x + c.pad) * 4 + 3)];
+  assert.deepEqual(at(5, 8), [200, 60, 60], 'body color painted where the arm was');
+  assert.equal(partLayers(ref, ps)[1][(8 * W + 5) * 4 + 3], 255, 'the arm keeps its own pixels');
+});

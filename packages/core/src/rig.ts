@@ -171,10 +171,43 @@ export function rigCanvas(ref: PixelImage): RigCanvas {
 }
 
 /**
- * Draws one pose: each part's pixels rotated around its (moved) pivot with nearest
+ * Each part's own image: the reference pixels it owns, plus an UNDERPAINT where a part in
+ * front of it covers it (the torso behind an arm). Those hidden pixels are filled from the
+ * part's nearest own colors, so when the arm swings away the body isn't a hole, the way
+ * cut-out animators paint the body under the limbs.
+ */
+export function partLayers(ref: PixelImage, parts: RigPart[], own = partOwnership(ref, parts)): Uint8ClampedArray[] {
+  const W = ref.width, H = ref.height;
+  return parts.map((p, i) => {
+    const layer = new Uint8ClampedArray(W * H * 4);
+    const dist = new Int32Array(W * H).fill(-1);
+    const queue: number[] = [];
+    for (let k = 0; k < W * H; k++) if (own[k] === i) { layer.set(ref.data.subarray(k * 4, k * 4 + 4), k * 4); dist[k] = 0; queue.push(k); }
+    // pixels inside this part's polygon owned by a part drawn in front of it
+    const hidden = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const k = y * W + x, o = own[k];
+      if (o >= 0 && o !== i && parts[o].z > p.z && insidePoly(p.poly, x + 0.5, y + 0.5)) hidden[k] = 1;
+    }
+    for (let q = 0; q < queue.length; q++) {
+      const k = queue[q], x = k % W, y = (k - x) / W;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy, n = ny * W + nx;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H || dist[n] >= 0 || !hidden[n]) continue;
+        dist[n] = dist[k] + 1;
+        layer.set(layer.subarray(k * 4, k * 4 + 4), n * 4);
+        queue.push(n);
+      }
+    }
+    return layer;
+  });
+}
+
+/**
+ * Draws one pose: each part's layer rotated around its (moved) pivot with nearest
  * sampling, back to front. Pure pixel moves: no new colors, no blur.
  */
-export function renderPose(ref: PixelImage, parts: RigPart[], pose: RigPose, canvas: RigCanvas = rigCanvas(ref), own = partOwnership(ref, parts)): PixelImage {
+export function renderPose(ref: PixelImage, parts: RigPart[], pose: RigPose, canvas: RigCanvas = rigCanvas(ref), own = partOwnership(ref, parts), layers = partLayers(ref, parts, own)): PixelImage {
   const { width: W, height: H, pad } = canvas;
   const out: PixelImage = { width: W, height: H, data: new Uint8ClampedArray(W * H * 4) };
   if (!parts.length) {
@@ -182,32 +215,27 @@ export function renderPose(ref: PixelImage, parts: RigPart[], pose: RigPose, can
     return out;
   }
   const tf = solvePose(parts, pose);
-  // bounds of each part in the reference, to limit the inverse-mapping scan
-  const bounds = parts.map(() => ({ x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }));
-  for (let y = 0; y < ref.height; y++) for (let x = 0; x < ref.width; x++) {
-    const i = own[y * ref.width + x];
-    if (i < 0) continue;
-    const b = bounds[i];
-    if (x < b.x0) b.x0 = x; if (y < b.y0) b.y0 = y; if (x > b.x1) b.x1 = x; if (y > b.y1) b.y1 = y;
-  }
   const order = parts.map((p, i) => ({ p, i })).sort((a, b) => a.p.z - b.p.z);
   for (const { p, i } of order) {
-    const b = bounds[i];
-    if (b.x1 < 0) continue;
+    const layer = layers[i];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let y = 0; y < ref.height; y++) for (let x = 0; x < ref.width; x++) if (layer[(y * ref.width + x) * 4 + 3]) { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; }
+    if (x1 < 0) continue;
     const t = tf.get(p.name)!;
-    // where the part's reference box lands after the transform, to know which canvas pixels to test
-    const corners = [[b.x0, b.y0], [b.x1 + 1, b.y0], [b.x0, b.y1 + 1], [b.x1 + 1, b.y1 + 1]].map(([x, y]) => {
+    const corners = [[x0, y0], [x1 + 1, y0], [x0, y1 + 1], [x1 + 1, y1 + 1]].map(([x, y]) => {
       const [rx, ry] = rot(x - p.pivot[0], y - p.pivot[1], t.angle);
       return [rx + t.at[0] + pad, ry + t.at[1] + pad];
     });
     const cx0 = Math.max(0, Math.floor(Math.min(...corners.map(c => c[0]))) - 1), cx1 = Math.min(W - 1, Math.ceil(Math.max(...corners.map(c => c[0]))) + 1);
     const cy0 = Math.max(0, Math.floor(Math.min(...corners.map(c => c[1]))) - 1), cy1 = Math.min(H - 1, Math.ceil(Math.max(...corners.map(c => c[1]))) + 1);
     for (let y = cy0; y <= cy1; y++) for (let x = cx0; x <= cx1; x++) {
-      // inverse map the canvas pixel centre back into the reference
+      // inverse map the canvas pixel centre back into the part's layer
       const [sx, sy] = rot(x + 0.5 - pad - t.at[0], y + 0.5 - pad - t.at[1], -t.angle);
       const rx = Math.floor(sx + p.pivot[0]), ry = Math.floor(sy + p.pivot[1]);
-      if (rx < 0 || ry < 0 || rx >= ref.width || ry >= ref.height || own[ry * ref.width + rx] !== i) continue;
-      out.data.set(ref.data.subarray((ry * ref.width + rx) * 4, (ry * ref.width + rx) * 4 + 4), (y * W + x) * 4);
+      if (rx < 0 || ry < 0 || rx >= ref.width || ry >= ref.height) continue;
+      const k = (ry * ref.width + rx) * 4;
+      if (layer[k + 3] < 128) continue;
+      out.data.set(layer.subarray(k, k + 4), (y * W + x) * 4);
     }
   }
   return out;
@@ -215,8 +243,8 @@ export function renderPose(ref: PixelImage, parts: RigPart[], pose: RigPose, can
 
 /** Every frame of a clip. */
 export function renderClip(ref: PixelImage, parts: RigPart[], clip: RigClip): PixelImage[] {
-  const canvas = rigCanvas(ref), own = partOwnership(ref, parts);
-  return clipPoses(clip, parts.map(p => p.name)).map(pose => renderPose(ref, parts, pose, canvas, own));
+  const canvas = rigCanvas(ref), own = partOwnership(ref, parts), layers = partLayers(ref, parts, own);
+  return clipPoses(clip, parts.map(p => p.name)).map(pose => renderPose(ref, parts, pose, canvas, own, layers));
 }
 
 /** A clip with one neutral key: the starting point for posing a new move. */

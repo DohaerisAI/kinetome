@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  clipPoses, emptyClip, partOwnership, renderPose, rigCanvas, solvePose,
+  clipPoses, emptyClip, partLayers, partOwnership, renderPose, rigCanvas, solvePose,
   type CharacterRig, type Ease, type PixelImage, type RigClip, type RigPart, type RigPose,
 } from '@kinetome/core';
 import { api } from '../../api.ts';
@@ -220,6 +220,7 @@ function ClipEditor({ projectId, design: d, update, runClaude, busy, model, ref_
   const cv = rigCanvas(ref);
   const z = Math.max(2, Math.min(6, Math.floor(540 / Math.max(cv.width, cv.height))));
   const own = useMemo(() => partOwnership(ref, parts), [ref, parts]);
+  const layers = useMemo(() => partLayers(ref, parts, own), [ref, parts, own]);
   const names = useMemo(() => parts.map(p => p.name), [parts]);
   const poses = useMemo(() => (clip ? clipPoses(clip, names) : []), [clip, names]);
   const pose = poses[Math.min(frame, poses.length - 1)] ?? {};
@@ -248,8 +249,8 @@ function ClipEditor({ projectId, design: d, update, runClaude, busy, model, ref_
     const g = c.getContext('2d')!;
     g.fillStyle = '#0c0c14'; g.fillRect(0, 0, c.width, c.height);
     g.strokeStyle = 'rgba(255,90,140,.45)'; g.beginPath(); g.moveTo(0, (refPivot.y + cv.pad + 1) * z + 0.5); g.lineTo(c.width, (refPivot.y + cv.pad + 1) * z + 0.5); g.stroke();
-    if (onion && !playing && poses.length > 1) paint(c, renderPose(ref, parts, poses[(frame - 1 + poses.length) % poses.length], cv, own), z, [80, 120, 255, 90]);
-    paint(c, renderPose(ref, parts, pose, cv, own), z);
+    if (onion && !playing && poses.length > 1) paint(c, renderPose(ref, parts, poses[(frame - 1 + poses.length) % poses.length], cv, own, layers), z, [80, 120, 255, 90]);
+    paint(c, renderPose(ref, parts, pose, cv, own, layers), z);
     if (!playing) {
       const tf = solvePose(parts, pose);
       parts.forEach((p, i) => {
@@ -259,7 +260,7 @@ function ClipEditor({ projectId, design: d, update, runClaude, busy, model, ref_
         g.fillStyle = partColor(i, p.name === sel ? 1 : 0.8); g.fill(); g.strokeStyle = '#0c0c14'; g.lineWidth = 2; g.stroke();
       });
     }
-  }, [clip, pose, poses, frame, onion, playing, sel, ref, parts, own, z, cv.width, cv.height, cv.pad, refPivot.y]);
+  }, [clip, pose, poses, frame, onion, playing, sel, ref, parts, own, layers, z, cv.width, cv.height, cv.pad, refPivot.y]);
 
   /** The part under a canvas point in the CURRENT pose (front-most first). */
   const partAt = (cx: number, cy: number): string | null => {
@@ -312,7 +313,7 @@ function ClipEditor({ projectId, design: d, update, runClaude, busy, model, ref_
     if (!clip || !move || !linked) return;
     setSaving(true);
     try {
-      const frames = poses.map(p => renderPose(ref, parts, p, cv, own));
+      const frames = poses.map(p => renderPose(ref, parts, p, cv, own, layers));
       const img = await loadImage(api.sheetUrl(projectId, linked));
       const merged = mergeIntoAsset(img, linked, { frames, pivot: { x: refPivot.x + cv.pad, y: refPivot.y + cv.pad }, animations: [{ name: move.id, fps: clip.fps, loop: clip.loop, frames: frames.map((_, i) => i) }] });
       const png = await new Promise<Blob>((res, rej) => merged.canvas.toBlob(b => (b ? res(b) : rej(new Error('encode failed'))), 'image/png'));
