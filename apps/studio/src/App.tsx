@@ -22,6 +22,8 @@ import { Orb } from './components/Orb.tsx';
 import { useClaudeActivity } from './claudeActivity.ts';
 import { ProjectMenu } from './components/ProjectMenu.tsx';
 import { TrashDialog } from './components/TrashDialog.tsx';
+import { ExportDialog } from './components/ExportDialog.tsx';
+import { CheckPanel, LightingPanel, VariantsPanel } from './components/SpritePanels.tsx';
 import { pop, slideTo, viewIn } from './motion.ts';
 
 type Tab = 'home' | 'library' | 'editor' | 'characters' | 'playtest' | 'lineup' | 'style';
@@ -79,6 +81,7 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeAction, setNoticeAction] = useState<{ label: string; run: () => void } | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [exportFor, setExportFor] = useState<string[] | null>(null);
   const [assets, setAssets] = useState<SpriteAsset[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [animName, setAnimName] = useState<string | null>(null);
@@ -98,6 +101,7 @@ export function App() {
   const [sessionUsage, setSessionUsage] = useState({ tokens: 0, calls: 0 });
   const [designs, setDesigns] = useState<CharacterDesign[]>([]);
   const [editRequest, setEditRequest] = useState<{ assetId: string; nonce: number } | null>(null);
+  const [editorFiles, setEditorFiles] = useState<{ files: File[]; nonce: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -276,6 +280,8 @@ export function App() {
    * videos and frame sequences go to the pixelizer.
    */
   const routeFiles = async (all: File[]) => {
+    const ase = all.filter(f => /\.(ase|aseprite)$/i.test(f.name));
+    if (ase.length) { setEditorFiles({ files: ase, nonce: Date.now() }); setTab('editor'); return; }
     const files = all.filter(f => /\.(png|json|jpe?g|gif|webp|bmp|avif|mp4|webm|mov|m4v)$/i.test(f.name) || isVideo(f));
     if (!files.length) return;
     const hasJson = files.some(f => /\.json$/i.test(f.name));
@@ -345,7 +351,7 @@ export function App() {
       { id: 'dup-project', label: 'Duplicate this project', group: 'Project', icon: 'duplicate' as IconName, run: () => void duplicateProject() },
       { id: 'del-project', label: 'Delete this project…', group: 'Project', icon: 'trash' as IconName, run: () => void deleteProject() },
     ] : []),
-    ...(pid ? [{ id: 'godot-zip', label: 'Download everything for Godot (.zip)', group: 'Actions', icon: 'download' as IconName, keywords: 'export', run: () => { location.href = api.godotZipUrl(pid); } }] : []),
+    ...(pid ? [{ id: 'export', label: 'Export…', group: 'Actions', icon: 'download' as IconName, keywords: 'godot unity phaser pixi texturepacker aseprite zip', run: () => setExportFor([]) }] : []),
     ...(project?.godot.path ? [{ id: 'godot-sync', label: 'Sync all sprites to Godot', group: 'Actions', icon: 'refresh' as IconName, run: () => void syncGodot() }] : []),
     ...assets.flatMap(a => [
       { id: `open-${a.id}`, label: a.name, group: 'Sprites', icon: 'image' as IconName, keywords: `${a.kind} ${a.animations.map(x => x.name).join(' ')} open library`, run: () => openAsset(a.id) },
@@ -391,12 +397,10 @@ export function App() {
           </select>
           {sessionUsage.calls > 0 && <span className="pill-usage" title={`${sessionUsage.calls} Claude calls this session`}>{fmtTokens(sessionUsage.tokens)} tok</span>}
         </div>
-        {pid && (project?.godot.path
-          ? <button className="godot-btn" onClick={() => syncGodot()} title={`Sync every sprite into ${project.godot.path}`}><Icon name="refresh" /> <span>Sync Godot</span></button>
-          : <a className="button godot-btn" href={api.godotZipUrl(pid)} title="Every asset as SpriteFrames + scenes for Godot (.zip)"><Icon name="download" /> <span>Godot</span></a>)}
+        {pid && <button className="godot-btn" onClick={() => setExportFor([])} title="Export for Godot, Unity, Phaser, PixiJS, TexturePacker or Aseprite"><Icon name="download" /> <span>Export</span></button>}
         <button className="primary" onClick={() => fileInput.current?.click()} disabled={!pid} title="Sprite sheets, images, GIFs, videos"><Icon name="upload" /> Import…</button>
         <input
-          ref={fileInput} type="file" multiple accept=".png,.json,.jpg,.jpeg,.gif,.webp,.bmp,.avif,image/*,video/*" hidden
+          ref={fileInput} type="file" multiple accept=".png,.json,.jpg,.jpeg,.gif,.webp,.bmp,.avif,.ase,.aseprite,image/*,video/*" hidden
           onChange={e => { routeFiles([...(e.target.files ?? [])]); e.target.value = ''; }}
         />
         <input
@@ -428,6 +432,12 @@ export function App() {
             godotZipUrl={selected ? api.godotZipUrl(pid, selected.id) : null}
             onSyncGodot={project?.godot.path && selected ? () => syncGodot(selected.id) : null}
             onEdit={selected ? () => editAsset(selected.id) : null}
+            onExport={selected ? () => setExportFor([selected.id]) : null}
+            extraTabs={selected ? [
+              { id: 'variants', label: 'Variants', icon: 'palette', render: () => <VariantsPanel projectId={pid} asset={selected} img={img} design={designs.find(d => d.assetId === selected.id) ?? null} fail={fail} onCreated={a => { setAssets(list => [...list, a]); notify(`Created ${a.name}`, { label: 'Open', run: () => setSelectedId(a.id) }); }} /> },
+              { id: 'light', label: 'Lighting', icon: 'sparkle', render: () => <LightingPanel projectId={pid} asset={selected} img={img} /> },
+              { id: 'check', label: 'Check', icon: 'check', render: () => <CheckPanel asset={selected} img={img} design={designs.find(d => d.assetId === selected.id) ?? null} onPick={setAnimName} /> },
+            ] : []}
             projectId={pid} fail={fail}
             onRestored={a => { replaceAsset(a); notify(`Restored an earlier version of ${a.name}`); }}
           />
@@ -441,7 +451,7 @@ export function App() {
       {pid && style && (
         // kept mounted so switching tabs never loses unsaved editor work
         <div className="tab-host" hidden={tab !== 'editor'}>
-          <EditorView projectId={pid} assets={ready ? assets : []} style={style} designs={designs} openRequest={editRequest} active={tab === 'editor'}
+          <EditorView projectId={pid} assets={ready ? assets : []} importFiles={editorFiles} style={style} designs={designs} openRequest={editRequest} active={tab === 'editor'}
             onSaved={a => { setAssets(list => (list.some(x => x.id === a.id) ? list.map(x => (x.id === a.id ? a : x)) : [...list, a])); setSelectedId(a.id); }}
             notify={notify} fail={fail} />
         </div>
@@ -475,6 +485,7 @@ export function App() {
           onCancel={() => { pendingImport.current = null; setPixelizeFiles(null); }} onCreate={importPixelized} onMerge={mergePixelized} onError={fail} />
       )}
       {dragging && <div className="dropveil"><div className="dropveil-card"><Icon name="upload" size={28} /><strong>Drop to import</strong><span className="dim">Sprite sheets, images, GIFs or videos</span></div></div>}
+      {exportFor && pid && <ExportDialog projectId={pid} project={project} assets={assets} initial={exportFor} onClose={() => setExportFor(null)} onSync={project?.godot.path ? () => void syncGodot() : null} />}
       {trashOpen && <TrashDialog projectId={pid} projectName={id => projects.find(p => p.id === id)?.name ?? id} onClose={() => setTrashOpen(false)} onRestored={afterRestore} fail={fail} />}
       {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
     </div>

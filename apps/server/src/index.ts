@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { ZodError } from 'zod';
 import * as store from './store.ts';
 import { characters } from './characters.ts';
+import { ENGINES, exportZip, normalSheet, type Engine } from './export.ts';
 
 const app = new Hono().basePath('/api');
 
@@ -55,11 +56,22 @@ app.get('/trash/:id/sheet.png', async c => {
 app.put('/projects/:p/style', async c => c.json(await store.saveStyle(c.req.param('p'), await c.req.json())));
 
 app.put('/projects/:p/godot', async c => c.json(await store.saveGodotSettings(c.req.param('p'), await c.req.json())));
-app.get('/projects/:p/export/godot.zip', async c => {
-  const asset = c.req.query('asset') || undefined;
-  const bytes = await store.exportGodotZip(c.req.param('p'), asset);
-  const name = `${asset ?? c.req.param('p')}-godot.zip`;
-  return c.body(bytes, 200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="${name}"` });
+
+// every engine: /export/<engine>.zip?assets=a,b&normals=1&ppu=16
+app.get('/projects/:p/export/:engine{[a-z]+\\.zip}', async c => {
+  const engine = c.req.param('engine').replace(/\.zip$/, '') as Engine;
+  if (!ENGINES.includes(engine)) throw new store.HttpError(400, `unknown engine: ${engine}`);
+  const q = c.req.query();
+  const bytes = await exportZip(c.req.param('p'), engine, {
+    assets: (q.assets ?? q.asset) ? (q.assets ?? q.asset).split(',').filter(Boolean) : undefined,
+    normals: q.normals === '1', ppu: q.ppu ? Math.max(1, Number(q.ppu)) : undefined, padding: q.padding ? Number(q.padding) : undefined,
+  });
+  return c.body(bytes, 200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="${c.req.param('p')}-${engine}.zip"` });
+});
+app.get('/projects/:p/assets/:a/normals.png', async c => {
+  const q = c.req.query();
+  const png = await normalSheet(c.req.param('p'), c.req.param('a'), { bevel: q.bevel ? Number(q.bevel) : undefined, strength: q.strength ? Number(q.strength) : undefined, luminance: q.luminance ? Number(q.luminance) : undefined });
+  return c.body(new Uint8Array(png), 200, { 'content-type': 'image/png', 'cache-control': 'no-cache' });
 });
 app.post('/projects/:p/export/godot/sync', async c => {
   const asset = c.req.query('asset') || undefined;

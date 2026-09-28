@@ -19,6 +19,7 @@ interface Props {
   godotZipUrl: string | null;
   onSyncGodot: (() => void) | null;
   onEdit: (() => void) | null;
+  onExport: (() => void) | null;
   projectId: string;
   onRestored: (a: SpriteAsset) => void;
   fail: (e: unknown) => void;
@@ -28,7 +29,7 @@ interface Props {
 
 type TabId = 'details' | 'history' | string;
 
-export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelete, extraPalette, godotZipUrl, onSyncGodot, onEdit, projectId, onRestored, fail, extraTabs = [] }: Props) {
+export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelete, extraPalette, godotZipUrl, onSyncGodot, onEdit, onExport, projectId, onRestored, fail, extraTabs = [] }: Props) {
   const [tab, setTab] = useState<TabId>('details');
   const pixels = usePixels(img);
   const effStyle = useMemo(() => (extraPalette.length ? { ...style, palette: [...new Set([...style.palette, ...extraPalette])] } : style), [style, extraPalette]);
@@ -173,6 +174,7 @@ export function Inspector({ asset, img, style, animName, onAnim, onSave, onDelet
         <div className="btnrow">
           {godotZipUrl && <a className="button" href={godotZipUrl}>Download .zip</a>}
           {onSyncGodot && <button onClick={onSyncGodot}>Sync to Godot project</button>}
+          {onExport && <button onClick={onExport}>Other engines…</button>}
         </div>
 
         <h3>Asset</h3>

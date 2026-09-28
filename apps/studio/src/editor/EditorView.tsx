@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CharacterDesign, SpriteAsset, StyleBible } from '@kinetome/core';
 import { Icon } from '../icons.tsx';
 import { api } from '../api.ts';
-import { useImage } from '../pixels.ts';
+import { download, useImage } from '../pixels.ts';
 import { FrameThumb } from '../components/FrameThumb.tsx';
 import { PageHeader } from '../components/PageHeader.tsx';
 import { useEnter } from '../motion.ts';
@@ -15,7 +15,7 @@ import { OptionsBar, ToolBar } from './Tools.tsx';
 import { blobToPixels, downloadFramePng, downloadGif, downloadSheet, openAsset, saveToLibrary } from './io.ts';
 import { Preview } from './Preview.tsx';
 import {
-  clearSelected, createDoc, editableCel, patchFrameMeta, extract, invert, isEmpty, playRange, resizeDoc, scaleDoc, scaleNearest, tagOf,
+  clearSelected, createDoc, decodeAse, editableCel, encodeAse, patchFrameMeta, extract, invert, isEmpty, playRange, resizeDoc, scaleDoc, scaleNearest, tagOf,
   transformFloating, trimCanvas, withCel, type Anchor9, type EditorDoc, type Floating,
 } from './model.ts';
 import { useEditor, type Tool } from './useEditor.ts';
@@ -29,6 +29,8 @@ interface Props {
   openRequest: { assetId: string; nonce: number } | null;
   /** The editor tab is visible (shortcuts only work then). */
   active: boolean;
+  /** Files dropped elsewhere in the studio that belong here (.aseprite). */
+  importFiles?: { files: File[]; nonce: number } | null;
   onSaved: (a: SpriteAsset) => void;
   notify: (msg: string, action?: { label: string; run: () => void }) => void;
   fail: (e: unknown) => void;
@@ -50,7 +52,7 @@ function AssetPick({ projectId, asset, onClick }: { projectId: string; asset: Sp
  * The sprite editor: Aseprite-style frames x layers with tags, onion skin and a full pixel
  * toolset, plus batch clean-up, sheet slicing and "apply fix to frames".
  */
-export function EditorView({ projectId, assets, style, designs, openRequest, active, onSaved, notify, fail }: Props) {
+export function EditorView({ projectId, assets, style, designs, openRequest, active, importFiles, onSaved, notify, fail }: Props) {
   const ed = useEditor();
   const { state } = ed;
   const { doc } = state;
@@ -87,6 +89,19 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
     const a = assets.find(x => x.id === openRequest.assetId);
     if (a) void openLibrary(a);
   }, [openRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Files from the open dialog: .aseprite opens directly (layers, tags), images go to the slicer. */
+  const takeFiles = async (files: File[]) => {
+    const ase = files.find(f => /\.(ase|aseprite)$/i.test(f.name));
+    if (!ase) { if (files.length) setSliceFiles(files); return; }
+    if (!confirmDiscard()) return;
+    try {
+      const d = await decodeAse(new Uint8Array(await ase.arrayBuffer()), ase.name.replace(/\.(ase|aseprite)$/i, ''));
+      ed.open(d); setStarted(true); setMenu(null);
+      notify(`Opened ${ase.name} · ${d.frames.length} frames, ${d.layers.length} layer${d.layers.length > 1 ? 's' : ''}, ${d.tags.length} tag${d.tags.length === 1 ? '' : 's'}`);
+    } catch (e) { fail(e); }
+  };
+  useEffect(() => { if (importFiles?.files.length) void takeFiles(importFiles.files); }, [importFiles?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const newDoc = () => {
     if (!confirmDiscard()) return;
@@ -299,7 +314,7 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
             </>
           )}
         </div>
-        <input ref={fileInput} type="file" multiple accept="image/*,video/*,.gif,.webp,.png,.jpg,.jpeg" hidden onChange={e => { const f = [...(e.target.files ?? [])]; if (f.length) setSliceFiles(f); e.target.value = ''; }} />
+        <input ref={fileInput} type="file" multiple accept="image/*,video/*,.gif,.webp,.png,.jpg,.jpeg,.ase,.aseprite" hidden onChange={e => { const f = [...(e.target.files ?? [])]; void takeFiles(f); e.target.value = ''; }} />
         {sliceFiles && <SlicerDialog files={sliceFiles} onCancel={() => setSliceFiles(null)} onError={e => { fail(e); setSliceFiles(null); }}
           onDone={d => { ed.open({ ...d, palette: d.palette.length ? d.palette : [] }); setSliceFiles(null); setStarted(true); notify(`${d.frames.length} frames ready`); }} />}
       </main>
@@ -314,7 +329,7 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
           <button className={menu === 'open' ? 'active' : ''} onClick={() => setMenu(m => (m === 'open' ? null : 'open'))}><Icon name="folder" /> Open</button>
           {menu === 'open' && (
             <div className="ed-pop wide">
-              <button className="ed-pop-item" onClick={() => { setMenu(null); fileInput.current?.click(); }}><Icon name="upload" /> Import sprite sheet / GIF / video…</button>
+              <button className="ed-pop-item" onClick={() => { setMenu(null); fileInput.current?.click(); }}><Icon name="upload" /> Import sprite sheet / GIF / video / .aseprite…</button>
               {assets.length > 0 && <div className="ed-pop-title">Library</div>}
               <div className="ed-asset-grid compact">{assets.map(a => <AssetPick key={a.id} projectId={projectId} asset={a} onClick={() => void openLibrary(a)} />)}</div>
             </div>
@@ -426,6 +441,7 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
             <div className="ed-pop right">
               <button className="ed-pop-item" onClick={() => { void downloadSheet(ed.ref.current.doc); setMenu(null); }}><Icon name="grid" /> PNG sheet + JSON</button>
               <button className="ed-pop-item" onClick={() => { void downloadFramePng(ed.ref.current.doc, state.frame, gifOpts.scale); setMenu(null); }}><Icon name="image" /> This frame as PNG ({gifOpts.scale}×)</button>
+              <button className="ed-pop-item" onClick={() => { ed.settle(); const d = ed.ref.current.doc; download(`${d.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'sprite'}.aseprite`, new Blob([encodeAse(d) as BlobPart], { type: 'application/octet-stream' })); setMenu(null); }}><Icon name="layers" /> Aseprite file (.aseprite, with layers and tags)</button>
               <div className="ed-pop-title">Animated GIF</div>
               <div className="seg compact" role="radiogroup" aria-label="GIF frames">
                 <button role="radio" aria-checked={gifRange === 'tag'} className={gifRange === 'tag' ? 'active' : ''} onClick={() => setGifOpts({ ...gifOpts, range: 'tag' })} disabled={!curTag} title={curTag ? 'The tag the current frame is in' : 'This frame is not in a tag'}>{curTag?.name ?? 'Current tag'}</button>
@@ -461,7 +477,7 @@ export function EditorView({ projectId, assets, style, designs, openRequest, act
       </div>
       <Timeline ed={ed} />
 
-      <input ref={fileInput} type="file" multiple accept="image/*,video/*,.gif,.webp,.png,.jpg,.jpeg" hidden onChange={e => { const f = [...(e.target.files ?? [])]; if (f.length) setSliceFiles(f); e.target.value = ''; }} />
+      <input ref={fileInput} type="file" multiple accept="image/*,video/*,.gif,.webp,.png,.jpg,.jpeg,.ase,.aseprite" hidden onChange={e => { const f = [...(e.target.files ?? [])]; void takeFiles(f); e.target.value = ''; }} />
       <input ref={refInput} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) { loadReference(f, f.name); setMenu(null); } e.target.value = ''; }} />
       {sliceFiles && <SlicerDialog files={sliceFiles} onCancel={() => setSliceFiles(null)} onError={e => { fail(e); setSliceFiles(null); }}
         onDone={d => { if (confirmDiscard()) { ed.open(d); notify(`${d.frames.length} frames ready`); } setSliceFiles(null); }} />}

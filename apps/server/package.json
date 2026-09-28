@@ -9,10 +9,16 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "@kinetome/core": "*",
-    "hono": "^4.13.0",
     "@hono/node-server": "^2.1.0",
+    "@kinetome/core": "*",
+    "@kinetome/editor": "*",
+    "@kinetome/pixel": "*",
+    "hono": "^4.13.0",
     "zod": "^4.1.0"
   },
-  "devDependencies": { "typescript": "^5.9.0", "tsx": "^4.20.0", "@types/node": "^22.0.0" }
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "tsx": "^4.20.0",
+    "@types/node": "^22.0.0"
+  }
 }
