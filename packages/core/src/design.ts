@@ -1,4 +1,4 @@
-import { rampFor } from './color.ts';
+import { hexToRgb, rampFor, rgbToOklab } from './color.ts';
 import { PLATFORMER_MOVES, type MovePreset } from './prompts.ts';
 import type { CharacterDesign, MoveDraft, StyleBible } from './schema.ts';
 import { slugify } from './schema.ts';
@@ -192,4 +192,96 @@ export function newMove(presetId: string | null, name?: string): MoveDraft {
     effects: '',
     refImages: [],
   };
+}
+
+// ---------------- video route ----------------
+// An image-to-video model (Kling, Veo in Gemini, ...) gives real motion: airborne run frames,
+// follow-through, opposite arm swing. Kinetome then keys, loops, sizes and pixelates the clip.
+// The recipes below are the side-view ones that held the camera angle in testing (Scenario's
+// Iso Cycles notes): treadmill wording, "we never see its chest or its back", 5 s with the
+// end frame pinned for locomotion, return-to-rest for one-shots.
+
+export interface VideoKey { hex: string; name: string }
+const KEYS: VideoKey[] = [{ hex: '#FF00FF', name: 'magenta' }, { hex: '#00FF00', name: 'green' }];
+
+/** The chroma key farthest in hue from every saturated colour the character wears. */
+export function videoKeyFor(colors: string[]): VideoKey {
+  const hue = (hex: string) => { const [, a, b] = rgbToOklab(...hexToRgb(hex)); return { ang: Math.atan2(b, a), c: Math.hypot(a, b) }; };
+  const gap = (k: VideoKey) => {
+    const kh = hue(k.hex);
+    let min = Math.PI;
+    for (const c of colors) {
+      const h = hue(c);
+      if (h.c < 0.05) continue; // greys, skin-ish neutrals: no clash
+      let d = Math.abs(h.ang - kh.ang);
+      if (d > Math.PI) d = 2 * Math.PI - d;
+      min = Math.min(min, d);
+    }
+    return min;
+  };
+  return gap(KEYS[0]) >= gap(KEYS[1]) ? KEYS[0] : KEYS[1];
+}
+
+export interface VideoPlan {
+  prompt: string;
+  negative: string;
+  seconds: 3 | 5;
+  /** Use the first frame as the last frame too (most models call it "end frame" or "last frame"). */
+  pinEnd: boolean;
+  /** How Kinetome will cut the clip, for the user. */
+  cut: string;
+}
+
+const SIDE_FACING = 'Side profile: we keep seeing its right side at the same angle as the first frame for the whole clip; its face points at the right edge of the frame and we never see its chest or its back.';
+const LOCO = new Set(['walk', 'run']);
+
+/** Image-to-video request for one move, built from the character's design and the move draft. */
+export function videoMovePrompt(d: CharacterDesign, m: MoveDraft, key: VideoKey): VideoPlan {
+  const who = d.name;
+  const how = [m.description.trim(), m.notes.trim()].filter(Boolean).join('. ');
+  const extra = how ? ` ${how.replace(/\.?$/, '.')}` : '';
+  const weight = m.weight === 'heavy' ? ' Heavy and powerful: big anticipation, strong impact.' : m.weight === 'light' ? ' Light and quick.' : '';
+  const fx = m.effects.trim() ? ` Effects: ${m.effects.trim()}, drawn as solid shapes with no glow and no light cast on the background.` : '';
+  const id = m.id.replace(/-\d+$/, '');
+  let action: string, seconds: 3 | 5 = 3, pinEnd = true, cut: string;
+  if (id === 'run' || id === 'walk') {
+    action = id === 'run'
+      ? `game sprite animation, like a treadmill: ${who} immediately starts running in place toward the right edge of the screen and keeps running for the whole clip, a steady repeating run cycle: knees high, arms pumping opposite the legs, torso leaning forward, both feet leave the ground between steps.`
+      : `game sprite animation, like a treadmill: ${who} immediately starts walking in place toward the right edge of the screen and keeps walking for the whole clip, a steady repeating walk cycle at a relaxed pace: heel-to-toe steps, arms swing opposite the legs, slight up-and-down bob.`;
+    seconds = 5;
+    cut = 'Kinetome finds one clean stride in the middle of the clip and thins it to 16 fps.';
+  } else if (id === 'idle') {
+    action = `game sprite animation: ${who} stands idle in place, a subtle breathing loop: chest rises and falls, a slight weight shift, clothes and hair sway gently. Feet stay planted. Calm, small motion.`;
+    cut = 'Kinetome finds the smoothest breathing loop.';
+  } else if (id === 'death') {
+    action = `game sprite animation: ${who} is struck, staggers back and collapses to the ground, ending lying still on the ground line.`;
+    pinEnd = false;
+    cut = 'Use the whole clip from the hit to lying still; trim the tail in the import.';
+  } else if (id === 'fall') {
+    action = `game sprite animation: ${who} falls through the air in place without travelling: arms raised, clothes and hair streaming upward, legs loose, a repeating falling pose.`;
+    cut = 'Kinetome finds a short loop of the falling pose.';
+  } else {
+    const what: Record<string, string> = {
+      jump: 'crouches, jumps straight up in place (no travel), and lands back in the starting pose',
+      attack: `performs one ${m.name.toLowerCase()}`,
+      hurt: 'flinches back from a hit to the chest, then recovers',
+      dash: 'does a short low forward lunge-dash in place, body stretched forward',
+      crouch: 'crouches down low, holds it, then stands back up',
+      land: 'lands from a fall, knees bending to absorb the impact',
+    };
+    action = `game sprite animation: ${who} ${what[id] ?? `performs ${m.name.toLowerCase()}`}, then returns to the starting ready pose. Snappy anticipation, fast action, short follow-through.`;
+    cut = id === 'jump' ? 'Split it into take-off, rise, fall and land with "New animation from here" in the import.' : 'Kinetome keeps the frames that differ from the rest pose.';
+  }
+  const prompt = [
+    action + extra + weight + fx,
+    SIDE_FACING,
+    `${who} stays centred and does not travel across the frame. Locked static camera, flat solid ${key.name} (${key.hex}) background with no glow or light on it, no ground shadow, crisp pixel art, same character design as the first frame.`,
+  ].join(' ');
+  const negative = [
+    'front view, three-quarter view, facing the camera, turning toward the camera, back view, turning around',
+    'glowing halo around the character, light spill on the background, camera movement, zoom, travelling across the frame',
+    'ground shadow, drop shadow, background change, extra characters, blur, 3D render, text, watermark',
+    ...(LOCO.has(id) ? ['slowing down, stopping, standing still'] : []),
+  ].join(', ');
+  return { prompt, negative, seconds, pinEnd, cut };
 }

@@ -278,7 +278,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, input:focus, 
 .pz-results-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pz-results-head h3 { margin: 14px 0 10px; }
 .pz-variants { display: flex; gap: 12px; flex-wrap: wrap; }
-.pz-variant { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px; background: #121219; border-radius: 12px; }
+.pz-variant { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px; background: #121219; border: 1px solid var(--line-2); border-radius: 12px; cursor: pointer; transition: border-color .15s var(--ease), box-shadow .2s var(--ease); }
+.pz-variant:hover { border-color: var(--line-3); }
+.pz-variant:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pz-variant.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .pz-wait { display: grid; place-items: center; color: var(--dim); }
 .pz-palette { margin-top: 10px; }
@@ -378,6 +380,13 @@ button.small { font-size: 12px; padding: 3px 7px; }
 .step .card-head h3 { margin: 0; }
 .step-n { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font: 700 11px var(--mono); background: var(--panel-3); color: var(--dim); flex: none; }
 .step-n.done { background: rgba(79,209,139,.18); color: var(--ok); }
+.video-route .step-n { background: rgba(155,128,255,.16); color: var(--accent); }
+.vr-grid { display: grid; grid-template-columns: 180px 1fr; gap: 18px; align-items: start; margin-bottom: 10px; }
+.vr-frame { display: grid; gap: 8px; }
+.vr-frame canvas { width: 180px; height: 180px; border-radius: 10px; border: 1px solid var(--line-2); image-rendering: pixelated; background: var(--panel-2); }
+.vr-steps { margin: 0; padding-left: 20px; display: grid; gap: 10px; line-height: 1.5; }
+.vr-steps .btnrow { margin-top: 6px; }
+@media (max-width: 720px) { .vr-grid { grid-template-columns: 1fr; } }
 .move-title { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .ref-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .ref-img { position: relative; margin: 0; width: 150px; height: 110px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #101017; }

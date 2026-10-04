@@ -1,7 +1,7 @@
 import type { PixelImage, Rect } from '@kinetome/core';
 import { blit, contentBounds, createImage } from './image.ts';
 
-export type Anchor = 'feet' | 'center' | 'none';
+export type Anchor = 'feet' | 'body' | 'center' | 'none';
 
 /** Horizontal center of mass of the lowest 15% of the sprite: where the feet are. */
 function feetX(img: PixelImage, b: Rect): number {
@@ -14,9 +14,24 @@ function feetX(img: PixelImage, b: Rect): number {
 }
 
 /**
+ * Horizontal center of mass of the torso band (15-55% down the sprite): plumes, raised
+ * weapons and swinging legs stay out of it, so a run cycle holds still instead of sliding
+ * with whichever foot is forward.
+ */
+function bodyX(img: PixelImage, b: Rect): number {
+  let sum = 0, n = 0;
+  for (let y = b.y + Math.round(b.h * 0.15); y < b.y + Math.round(b.h * 0.55); y++)
+    for (let x = b.x; x < b.x + b.w; x++)
+      if (img.data[(y * img.width + x) * 4 + 3] >= 128) { sum += x; n++; }
+  return n ? sum / n : b.x + b.w / 2;
+}
+
+/**
  * Puts every frame on one shared canvas, tightly cropped.
  * - 'feet':   feet aligned (x) and ground line aligned (y). Turns a character walking
  *             across a GIF into a walk-in-place cycle and removes camera drift.
+ * - 'body':   torso aligned (x) and ground line aligned (y). For runs and attacks, where the
+ *             feet swing far from the body.
  * - 'center': bounding-box centers aligned (flying things, effects).
  * - 'none':   original positions kept, cropped to the union of all frames.
  * Returns the frames and the pivot (feet point) in the new canvas.
@@ -36,7 +51,7 @@ export function anchorFrames(frames: PixelImage[], mode: Anchor): { frames: Pixe
   const ax = frames.map((f, i) => {
     const b = bounds[i];
     if (!b) return 0;
-    return mode === 'feet' ? feetX(f, b) : b.x + b.w / 2;
+    return mode === 'feet' ? feetX(f, b) : mode === 'body' ? bodyX(f, b) : b.x + b.w / 2;
   });
   let left = 0, right = 0, up = 0, down = 0;
   frames.forEach((_, i) => {
@@ -44,7 +59,7 @@ export function anchorFrames(frames: PixelImage[], mode: Anchor): { frames: Pixe
     if (!b) return;
     left = Math.max(left, Math.ceil(ax[i] - b.x));
     right = Math.max(right, Math.ceil(b.x + b.w - ax[i]));
-    if (mode === 'feet') up = Math.max(up, b.h);
+    if (mode === 'feet' || mode === 'body') up = Math.max(up, b.h);
     else { up = Math.max(up, Math.ceil(b.h / 2)); down = Math.max(down, Math.ceil(b.h / 2)); }
   });
   const W = left + right, H = up + down;
@@ -53,7 +68,7 @@ export function anchorFrames(frames: PixelImage[], mode: Anchor): { frames: Pixe
     const b = bounds[i];
     if (!b) return c;
     const dx = Math.round(left - ax[i]);
-    const dy = mode === 'feet' ? H - (b.y + b.h) : Math.round(up - (b.y + b.h / 2));
+    const dy = mode === 'feet' || mode === 'body' ? H - (b.y + b.h) : Math.round(up - (b.y + b.h / 2));
     blit(c, f, dx, dy);
     return c;
   });

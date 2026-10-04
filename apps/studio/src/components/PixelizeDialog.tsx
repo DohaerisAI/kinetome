@@ -20,6 +20,9 @@ type Axis = 'height' | 'colors' | 'resample' | 'none';
 /** A named animation covering order positions [start, next segment's start). */
 interface Segment { name: string; start: number; fps: number; loop: boolean }
 
+/** Playback rate loops picked from video are thinned to. */
+const LOOP_FPS = 16;
+
 interface Target { asset: SpriteAsset; img: HTMLImageElement; palette: string[]; height: number }
 
 interface Props {
@@ -132,6 +135,9 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
       if (!live) return;
       setSrc(d);
       setRange([0, d.frames.length]);
+      // video is smooth footage, never pixel art (compression blocks fool grid detection): resample
+      // it, hold the torso still (legs swing), finish with crisp edges, keep its own colours
+      if (d.kind === 'video') setOpts(o => ({ ...o, mode: 'illustration', anchor: 'body', crisp: true, palette: o.palette === 'auto-bible' ? 'auto' : o.palette, colors: Math.max(o.colors, 24) }));
       setName(d.name.replace(/[_-]+/g, ' ').trim() || 'sprite');
       if (design) { setName(design.name); setDescription(design.description); }
       else try {
@@ -244,8 +250,15 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
     return next;
   }));
   const applyLoop = (l: LoopCandidate) => {
-    setOrder(o => o.slice(l.start, l.end));
-    setSegments(segs => [{ ...(segs[0] ?? { name: 'default', fps: srcFps, loop: true }), start: 0, loop: true }]);
+    // Footage runs at 24 fps; game loops play at up to 16. Keep frames spread evenly over one
+    // cycle so the loop plays at ~LOOP_FPS with the same speed as the source.
+    const loopOrder = order.slice(l.start, l.end);
+    const ms = loopOrder.reduce((t, i) => t + (src?.durations[i] ?? 100), 0);
+    const keep = src?.kind === 'video' ? Math.max(6, Math.min(loopOrder.length, Math.round((ms / 1000) * LOOP_FPS))) : loopOrder.length;
+    const picked = pickEvenly(0, loopOrder.length, keep).map(i => loopOrder[i]);
+    const fps = ms > 0 ? Math.max(1, Math.min(30, Math.round((picked.length * 1000) / ms))) : srcFps;
+    setOrder(picked);
+    setSegments(segs => [{ ...(segs[0] ?? { name: 'default', fps, loop: true }), fps, start: 0, loop: true }]);
     setLoops(null);
   };
 
@@ -411,11 +424,13 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
                   const frames = r ? (i === pick && motionResult ? motionResult.frames : segFrames(r)) : [];
                   const big = variants.length === 1;
                   return (
-                    <button key={v.label} className={i === pick ? 'pz-variant active' : 'pz-variant'} onClick={() => setPick(i)}>
+                    // a div, not a button: the preview inside has its own play button
+                    <div key={v.label} role="button" tabIndex={0} aria-pressed={i === pick} className={i === pick ? 'pz-variant active' : 'pz-variant'}
+                      onClick={() => setPick(i)} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setPick(i); } }}>
                       {r ? <AnimPreview frames={frames} fps={i === pick ? previewFps : seg?.fps ?? 10} width={big ? 300 : 200} height={big ? 250 : 200} /> : <div className="pz-wait" style={{ width: big ? 300 : 200, height: big ? 250 : 200 }}>…</div>}
                       <span>{v.label}</span>
                       {r && <span className="dim small">{r.mode === 'grid' ? `fixed pixel grid ×${r.grids[0]?.scale.toFixed(1)}` : r.mode} · {r.frames[0].width}×{r.frames[0].height} · {r.palette.length} colors</span>}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -550,6 +565,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
               <label className="field"><span>Anchor frames</span>
                 <select value={opts.anchor} onChange={e => set('anchor', e.target.value as PixelizeOptions['anchor'])}>
                   <option value="feet">Feet (walk in place, removes drift)</option>
+                  <option value="body">Body (runs, attacks: torso holds still)</option>
                   <option value="center">Center (flying, effects)</option>
                   <option value="none">Keep original positions</option>
                 </select>
@@ -561,6 +577,9 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
                 <label className="toggle block"><input type="checkbox" checked={opts.cleanup} onChange={e => set('cleanup', e.target.checked)} /> Clean stray pixels</label>
                 <label className="toggle block"><input type="checkbox" checked={!!opts.outline} onChange={e => set('outline', e.target.checked ? (style.outline.color ?? '#000000') : null)} /> Outline</label>
               </div>
+              <label className="toggle block" title="Contrast lift and a darkened edge: makes smooth video or painted art read as pixel art">
+                <input type="checkbox" checked={!!opts.crisp} onChange={e => set('crisp', e.target.checked)} /> Crisp edges (video, painted art)
+              </label>
             </section>
           </div>
         )}

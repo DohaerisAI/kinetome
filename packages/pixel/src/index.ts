@@ -12,3 +12,4 @@ export * from './quality.ts';
 export * from './normals.ts';
 export * from './effects.ts';
 export * from './modelcheck.ts';
+export * from './video.ts';

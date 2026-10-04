@@ -33,6 +33,11 @@ export interface PixelizeOptions {
   normalizeSize: boolean;
   outline: string | null;
   cleanup: boolean;
+  /**
+   * Crisp finish for smooth sources (video, painted art): a small contrast/saturation lift and
+   * every edge pixel darkened, so the downscale reads as pixel art instead of a blurry photo.
+   */
+  crisp?: boolean;
 }
 
 export interface PixelizeResult {
@@ -80,6 +85,23 @@ export function prepareSheet(img: PixelImage, o: Pick<PixelizeOptions, 'backgrou
     return { frames: [crop(clean, b)], rects: [b], rows: [[0]], background: bg, dropped: split.dropped };
   }
   return { frames: split.rects.map(r => crop(clean, r)), rects: split.rects, rows: split.rows, background: bg, dropped: split.dropped };
+}
+
+/** Contrast and saturation lift, then a darkened inner edge (the outline a downscale erases). */
+export function crispen(img: PixelImage, contrast = 1.08, saturation = 1.15, edge = 0.5): PixelImage {
+  const { width: W, height: H } = img, d = new Uint8ClampedArray(img.data);
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 128) continue;
+    const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    for (let c = 0; c < 3; c++) d[i + c] = ((l + (d[i + c] - l) * saturation) - 128) * contrast + 128;
+  }
+  const opaque = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && img.data[(y * W + x) * 4 + 3] >= 128;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!opaque(x, y) || (opaque(x - 1, y) && opaque(x + 1, y) && opaque(x, y - 1) && opaque(x, y + 1))) continue;
+    const i = (y * W + x) * 4;
+    for (let c = 0; c < 3; c++) d[i + c] *= edge;
+  }
+  return { width: W, height: H, data: d };
 }
 
 /** Colors that show up in only a few frames and barely: the flicker AI conversions leave behind. */
@@ -179,6 +201,7 @@ export function pixelize(input: PixelImage[], o: PixelizeOptions): PixelizeResul
 
   // 7. alpha, then one palette for all frames
   frames = frames.map(f => hardenAlpha(f));
+  if (o.crisp && mode === 'illustration') frames = frames.map(f => crispen(f));
   let palette: string[] = [];
   if (o.palette === 'bible') palette = o.bible;
   else if (o.palette === 'fixed') palette = o.fixedPalette;

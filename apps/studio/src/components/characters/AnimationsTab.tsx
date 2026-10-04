@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { designMovePrompt, layoutFor, newMove, PLATFORMER_MOVES, slugify, type MoveDraft, type PixelImage } from '@kinetome/core';
+import { designMovePrompt, designPalette, hexToRgb, layoutFor, newMove, PLATFORMER_MOVES, slugify, videoKeyFor, videoMovePrompt, type MoveDraft, type PixelImage } from '@kinetome/core';
+import { videoFirstFrame } from '@kinetome/pixel';
 import { api, type CodeEvent, type Packed, type Usage } from '../../api.ts';
 import { Icon } from '../../icons.tsx';
 import { Orb } from '../Orb.tsx';
 import { ProgramHistory } from './ProgramHistory.tsx';
 import { mergeIntoAsset } from '../../merge.ts';
-import { loadImage, unpackFrames, useImage } from '../../pixels.ts';
+import { canvasToPng, download, loadImage, pixelsToCanvas, unpackFrames, useImage } from '../../pixels.ts';
 import { AnimPreview } from '../AnimPreview.tsx';
 import { FrameThumb } from '../FrameThumb.tsx';
 import { ClaudeButton, CopyButton, Field, PromptBox, usageText, type TabProps } from './shared.tsx';
@@ -220,6 +221,8 @@ function MoveEditor(props: EditorProps) {
         ) : <p className="dim small">{m.refImages.length ? `${m.refImages.length} image${m.refImages.length > 1 ? 's' : ''} attached.` : 'Skip this unless Claude keeps misreading the motion.'}</p>}
       </Step>
 
+      <VideoRoute {...props} />
+
       <AnimateStep {...props} posesReady={posesReady} />
 
       <p className="dim small alt-route">Prefer a finished Gemini sprite sheet for this move? <button className="linklike" onClick={() => importFor({ assetId: d.assetId, anim: m.id })}>Import a sheet instead</button>.</p>
@@ -403,5 +406,78 @@ function AnimateStep({ projectId, design: d, assets, model, update, notify, fail
         </div>
       )}
     </Step>
+  );
+}
+
+
+/**
+ * The video route: the character's sprite on a key-colour first frame plus a tested prompt for
+ * any image-to-video model; the clip comes back through Import, which keys, loops and pixelates it.
+ */
+function VideoRoute({ projectId, design: d, assets, importFor, move: m }: EditorProps) {
+  const [open, setOpen] = useState(false);
+  const [sprite, setSprite] = useState<PixelImage | null>(null);
+  const linked = d.assetId ? assets.find(a => a.id === d.assetId) : undefined;
+  useEffect(() => {
+    let live = true;
+    setSprite(null);
+    if (!open || !linked) return;
+    const idle = linked.animations.find(a => a.name === 'idle') ?? linked.animations[0];
+    const rect = linked.frames[idle?.frames[0] ?? 0];
+    if (rect) unpackFrames(api.sheetUrl(projectId, linked), [rect]).then(([f]) => live && setSprite(f), () => {});
+    return () => { live = false; };
+  }, [open, projectId, linked]);
+  // key colour from what the sprite actually wears (falls back to the design's part colours)
+  const key = useMemo(() => {
+    const colors = new Set<string>(designPalette(d));
+    if (sprite) for (let i = 0; i < sprite.data.length; i += 16) if (sprite.data[i + 3] > 127) colors.add('#' + ((1 << 24) | (sprite.data[i] << 16) | (sprite.data[i + 1] << 8) | sprite.data[i + 2]).toString(16).slice(1));
+    return videoKeyFor([...colors]);
+  }, [d, sprite]);
+  const plan = useMemo(() => videoMovePrompt(d, m, key), [d, m, key]);
+  const frame = useMemo(() => (sprite ? videoFirstFrame(sprite, hexToRgb(key.hex)) : null), [sprite, key]);
+  const preview = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = preview.current;
+    if (!c || !frame) return;
+    const ctx = c.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.drawImage(pixelsToCanvas(frame), 0, 0, c.width, c.height);
+  }, [frame]);
+  const saveFrame = async () => { if (frame) download(`${slugify(d.name)}-first-frame-${key.name}.png`, await canvasToPng(pixelsToCanvas(frame))); };
+
+  return (
+    <section className="card step video-route">
+      <div className="card-head">
+        <span className="step-n"><Icon name="film" size={12} /></span>
+        <h3>Animate with a video model</h3>
+        <span className="dim small">best motion · Kling, Veo in Gemini, any image-to-video</span>
+        <div className="spacer" />
+        <button className="ghost small" onClick={() => setOpen(o => !o)} aria-expanded={open}><Icon name={open ? 'chevronDown' : 'chevronRight'} /> {open ? 'Hide' : 'Show'}</button>
+      </div>
+      {open ? (
+        <div className="vr-body">
+          {!linked ? <p className="dim small">Import {d.name}'s reference sprite first: the video starts from it.</p> : (
+            <div className="vr-grid">
+              <div className="vr-frame">
+                <canvas ref={preview} width={180} height={180} aria-label="First frame preview" />
+                <button onClick={() => void saveFrame()} disabled={!frame}><Icon name="download" /> First frame</button>
+              </div>
+              <ol className="vr-steps">
+                <li>Download the first frame ({d.name} on {key.name}, picked because it clashes least with {d.name}'s colours).</li>
+                <li>In the video model: upload it as the <strong>start image</strong>{plan.pinEnd ? <> and also as the <strong>end / last frame</strong></> : null}; <strong>{plan.seconds} s</strong>, square 1:1, audio off.</li>
+                <li>Paste the prompt and the negative prompt (if the model has one).
+                  <div className="btnrow"><CopyButton text={plan.prompt} label="Copy prompt" /><CopyButton text={plan.negative} label="Copy negative" primary={false} /></div>
+                </li>
+                <li>Import the clip. {plan.cut}
+                  <div className="btnrow"><button onClick={() => importFor({ assetId: d.assetId, anim: m.id })}><Icon name="upload" /> Import video…</button></div>
+                </li>
+              </ol>
+            </div>
+          )}
+          <PromptBox text={`${plan.prompt}\n\nNegative: ${plan.negative}`} />
+        </div>
+      ) : <p className="dim small">Real motion (airborne runs, follow-through) from one clip; Kinetome cuts the loop and makes it pixel art.</p>}
+    </section>
   );
 }

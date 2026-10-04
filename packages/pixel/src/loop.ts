@@ -61,6 +61,21 @@ export function findLoops(frames: PixelImage[], minLen = 4, limit = 5): LoopCand
     start: c.start, end: c.end,
     score: c.ratio + 0.6 * (1 - c.variety / (maxVariety || 1)) + 0.3 * c.still,
   }));
+  // Two strides also loop, often with a slightly better seam (in profile both legs look alike),
+  // but they halve the frame rate. A loop that contains a good loop of a half or a third of its
+  // length is a multiple: keep the single cycle.
+  const byStart = new Map<number, { len: number; score: number }[]>();
+  for (const c of out) { const l = byStart.get(c.start) ?? []; l.push({ len: c.end - c.start, score: c.score }); byStart.set(c.start, l); }
+  const multiple = (c: { start: number; end: number; score: number }) => {
+    const L = c.end - c.start;
+    for (const k of [2, 3]) {
+      if (L / k < minLen) continue;
+      for (let s = c.start - 2; s <= c.end - Math.round(L / k) + 2; s++)
+        for (const o of byStart.get(s) ?? []) if (Math.abs(o.len - L / k) <= 2 && o.score <= c.score + 0.25) return true;
+    }
+    return false;
+  };
+  for (const c of out) if (multiple(c)) c.score += 1;
   out.sort((a, b) => a.score - b.score || (a.end - a.start) - (b.end - b.start)); // ties: shortest cycle
   const picked: LoopCandidate[] = [];
   for (const c of out) {

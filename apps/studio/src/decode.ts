@@ -19,7 +19,7 @@ export interface Decoded {
 }
 
 const MAX_IMAGE = 1536;
-const MAX_VIDEO = 640;
+const MAX_VIDEO = 512;
 const MAX_FRAMES = 120;
 
 export const isVideo = (f: File) => f.type.startsWith('video/') || /\.(mp4|webm|mov|m4v)$/i.test(f.name);
@@ -83,7 +83,7 @@ async function decodeVideo(file: File, fps: number, maxSeconds: number): Promise
   } finally { URL.revokeObjectURL(url); video.removeAttribute('src'); }
 }
 
-export async function decodeFiles(files: File[], video = { fps: 12, maxSeconds: 10 }): Promise<Decoded> {
+export async function decodeFiles(files: File[], video = { fps: 24, maxSeconds: 6 }): Promise<Decoded> {
   const usable = files.filter(isPixelizable);
   if (!usable.length) throw new Error('No image or video files');
 

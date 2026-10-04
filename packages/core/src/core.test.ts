@@ -258,3 +258,18 @@ test('godot export: frame data script + Hitbox/Hurtbox areas only when the sprit
   assert.match(gd, /const FRAME_W := 32/);
   assert.ok(!/ {4}/.test(gd.split('\n').filter(l => !l.startsWith('##')).join('\n')), 'GDScript indents with tabs');
 });
+
+test('video route: key avoids the character colours; locomotion is 5 s pinned in profile', async () => {
+  const { videoKeyFor, videoMovePrompt, newMove } = await import('./index.ts');
+  assert.equal(videoKeyFor(['#5e0a3c', '#3c004a', '#c8a080']).name, 'green', 'purple/maroon character -> green key');
+  assert.equal(videoKeyFor(['#2e8b3c', '#c8a080']).name, 'magenta', 'green character -> magenta key');
+  const design = { id: 't', name: 'Thief', description: 'hooded thief', invariants: [], parts: [], outline: '#111', pixelHeight: 64 } as never;
+  const run = videoMovePrompt(design, newMove('run'), { hex: '#00FF00', name: 'green' });
+  assert.equal(run.seconds, 5); assert.equal(run.pinEnd, true);
+  assert.match(run.prompt, /treadmill/); assert.match(run.prompt, /never see its chest or its back/); assert.match(run.prompt, /green \(#00FF00\)/);
+  assert.match(run.negative, /standing still/);
+  const death = videoMovePrompt(design, newMove('death'), { hex: '#FF00FF', name: 'magenta' });
+  assert.equal(death.pinEnd, false);
+  const atk = videoMovePrompt(design, { ...newMove('attack'), effects: 'red slash arc' }, { hex: '#FF00FF', name: 'magenta' });
+  assert.match(atk.prompt, /returns to the starting ready pose/); assert.match(atk.prompt, /no glow/);
+});

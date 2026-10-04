@@ -4,7 +4,7 @@ import { countColors, type PixelImage } from '@kinetome/core';
 import {
   addOutline, assessResult, bodyHeight, hasOutline, prepareSheet, removeOrphans, splitSheet,
   anchorFrames, contentBounds, createImage, detectPixelScale, estimateBackground, findLoops, generateMotion,
-  pickEvenly, pixelize, removeBackground, sampleGrid, DEFAULT_PIXELIZE,
+  pickEvenly, pixelize, removeBackground, sampleGrid, DEFAULT_PIXELIZE, crispen,
 } from './index.ts';
 
 const PAL: [number, number, number][] = [[20, 12, 28], [93, 39, 93], [177, 62, 83], [239, 125, 87], [255, 205, 117]];
@@ -126,7 +126,7 @@ test('findLoops finds the period of a cyclic sequence', () => {
     return f;
   });
   const best = findLoops(frames, 3)[0];
-  assert.equal((best.end - best.start) % 6, 0);
+  assert.equal(best.end - best.start, 6, "one cycle, not a multiple");
   assert.deepEqual(pickEvenly(0, 12, 4), [0, 3, 6, 9]);
 });
 
@@ -271,4 +271,51 @@ test('chroma spill: dark green fringe on the silhouette edge is removed, the spr
   assert.equal(out.data[(20 * 40 + 11) * 4 + 3], 0, 'spill removed');
   assert.equal(out.data[(20 * 40 + 20) * 4 + 3], 255, 'body kept');
   assert.equal(out.data[(20 * 40 + 12) * 4 + 3], 255, 'body edge kept');
+});
+
+test('video ground shadow (darker backdrop hue) is keyed out; an enclosed purple detail is kept', () => {
+  const img = createImage(40, 40);
+  for (let p = 0; p < 1600; p++) img.data.set([255, 0, 255, 255], p * 4);                       // magenta key
+  for (let y = 8; y < 30; y++) for (let x = 14; x < 26; x++) img.data.set([20, 12, 28, 255], (y * 40 + x) * 4); // body, dark outline
+  for (let y = 12; y < 16; y++) for (let x = 17; x < 23; x++) img.data.set([120, 30, 140, 255], (y * 40 + x) * 4); // purple scarf inside
+  for (let y = 30; y < 34; y++) for (let x = 8; x < 32; x++) img.data.set([140, 20, 150, 255], (y * 40 + x) * 4); // shadow under feet
+  const out = removeBackground(img, estimateBackground(img)!, 0.09, true);
+  const a = (x: number, y: number) => out.data[(y * 40 + x) * 4 + 3];
+  assert.equal(a(10, 32), 0, 'shadow removed');
+  assert.equal(a(20, 14), 255, 'enclosed scarf kept');
+  assert.equal(a(20, 20), 255, 'body kept');
+});
+
+test('crispen darkens the silhouette edge and leaves the inside', () => {
+  const img = createImage(10, 10);
+  for (let y = 2; y < 8; y++) for (let x = 2; x < 8; x++) img.data.set([200, 160, 120, 255], (y * 10 + x) * 4);
+  const out = crispen(img);
+  const lum = (x: number, y: number) => { const i = (y * 10 + x) * 4; return out.data[i] + out.data[i + 1] + out.data[i + 2]; };
+  assert.ok(lum(2, 4) < lum(4, 4) * 0.6, 'edge darker');
+  assert.equal(out.data[(0 * 10 + 0) * 4 + 3], 0, 'transparency untouched');
+});
+
+test("anchor 'body' holds the torso still while the legs swing", () => {
+  const frames = [0, 1].map(i => {
+    const f = createImage(40, 40);
+    for (let y = 4; y < 22; y++) for (let x = 15; x < 23; x++) f.data.set([200, 0, 0, 255], (y * 40 + x) * 4);   // torso
+    const fx = i ? 26 : 6;                                                                                     // one foot forward, then back
+    for (let y = 22; y < 34; y++) for (let x = fx; x < fx + 6; x++) f.data.set([0, 0, 200, 255], (y * 40 + x) * 4);
+    return f;
+  });
+  const r = anchorFrames(frames, 'body');
+  const torsoX = (f: PixelImage) => { for (let x = 0; x < f.width; x++) if (f.data[(8 * f.width + x) * 4 + 3]) return x; return -1; };
+  assert.equal(torsoX(r.frames[0]), torsoX(r.frames[1]));
+});
+
+test('videoFirstFrame: whole-number upscale on the key colour with headroom', async () => {
+  const { videoFirstFrame } = await import('./index.ts');
+  const s = tinySprite();
+  const f = videoFirstFrame(s, [255, 0, 255], 960);
+  assert.equal(f.width, 960);
+  const b = contentBounds({ ...f, data: f.data.map((v, i) => (i % 4 === 3 ? (f.data[i - 3] === 255 && f.data[i - 2] === 0 && f.data[i - 1] === 255 ? 0 : 255) : v)) })!;
+  const sh = contentBounds(s)!.h;
+  assert.equal(b.h % sh, 0, 'integer scale');
+  assert.ok(b.h <= 960 * 0.58 && b.h > 960 * 0.45, `figure height ${b.h}`);
+  assert.ok(Math.abs(b.y + b.h - 960 * 0.82) <= 1, 'feet at 82%');
 });

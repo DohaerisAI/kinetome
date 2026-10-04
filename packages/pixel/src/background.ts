@@ -141,6 +141,34 @@ export function removeBackground(img: PixelImage, bg: Background, tolerance = 0.
       for (const p of eat) removed[p] = 1;
     }
   }
+  // Ground shadow: video models paint a darker patch of the backdrop under the feet. It
+  // shares the backdrop's hue, so on chroma backdrops the flood continues through pixels of
+  // that hue with real colour in them. Only from the outside: an enclosed purple scarf stays.
+  if (bg.colors.every(isChroma)) {
+    const [, ba, bb] = bgLab[0];
+    const bgAng = Math.atan2(bb, ba), bgChroma = Math.hypot(ba, bb);
+    const shadow = (p: number) => {
+      if (removed[p]) return false;
+      const i = p * 4;
+      const [, a, b] = lab.get(data[i], data[i + 1], data[i + 2]);
+      if (Math.hypot(a, b) < bgChroma * 0.3) return false;
+      let d = Math.abs(Math.atan2(b, a) - bgAng);
+      if (d > Math.PI) d = 2 * Math.PI - d;
+      return d < (14 * Math.PI) / 180;
+    };
+    for (let p = 0; p < W * H; p++) {
+      if (!removed[p]) continue;
+      const x = p % W, y = (p - x) / W;
+      for (const n of [x > 0 ? p - 1 : -1, x < W - 1 ? p + 1 : -1, y > 0 ? p - W : -1, y < H - 1 ? p + W : -1])
+        if (n >= 0 && shadow(n)) { removed[n] = 1; stack.push(n); }
+    }
+    while (stack.length) {
+      const p = stack.pop()!;
+      const x = p % W, y = (p - x) / W;
+      for (const n of [x > 0 ? p - 1 : -1, x < W - 1 ? p + 1 : -1, y > 0 ? p - W : -1, y < H - 1 ? p + W : -1])
+        if (n >= 0 && shadow(n)) { removed[n] = 1; stack.push(n); }
+    }
+  }
   for (let p = 0; p < W * H; p++) if (removed[p]) data[p * 4 + 3] = 0;
   return out;
 }
