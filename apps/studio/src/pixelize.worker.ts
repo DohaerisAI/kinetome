@@ -12,7 +12,7 @@ export type WorkerIn =
   /** Split a single image into poses (sheet) or pass decoded frames through. */
   | { type: 'prepare'; id: number; split: boolean; opts: PixelizeOptions }
   | { type: 'run'; id: number; order: number[]; variants: PixelizeOptions[]; maxColors: number }
-  | { type: 'loops'; id: number; order: number[]; opts: PixelizeOptions };
+  | { type: 'loops'; id: number; order: number[]; opts: PixelizeOptions; range?: [number, number] };
 
 export type WorkerOut =
   | { type: 'prepared'; id: number; prepared: Prepared }
@@ -62,7 +62,7 @@ self.onmessage = (e: MessageEvent<WorkerIn>) => {
     } else if (m.type === 'loops') {
       // Compare cleaned, anchored frames: drift and background noise would hide real loops.
       const clean = pixelize(m.order.map(i => working[i]), { ...effective(m.opts), outline: null }).frames;
-      post({ type: 'loops', id: m.id, loops: findLoops(clean, 4, 5) });
+      post({ type: 'loops', id: m.id, loops: findLoops(clean, m.range?.[0] ?? 4, 5, m.range?.[1] ?? Infinity) });
     }
   } catch (err) {
     post({ type: 'error', id: m.id, message: err instanceof Error ? err.message : String(err) });

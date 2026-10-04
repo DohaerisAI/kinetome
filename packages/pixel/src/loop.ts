@@ -33,7 +33,7 @@ export interface LoopCandidate { start: number; end: number; score: number }
  *    technically seamless but useless)
  *  - penalty for dead-still stretches inside the loop
  */
-export function findLoops(frames: PixelImage[], minLen = 4, limit = 5): LoopCandidate[] {
+export function findLoops(frames: PixelImage[], minLen = 4, limit = 5, maxLen = Infinity): LoopCandidate[] {
   const n = frames.length;
   if (n < minLen + 1) return [];
   const sigs = frames.map(f => signature(f, 32));
@@ -48,6 +48,7 @@ export function findLoops(frames: PixelImage[], minLen = 4, limit = 5): LoopCand
     for (let e = s + 1; e < n; e++) {
       variety = Math.max(variety, D[s][e - 1]);
       if (e - s < minLen) continue;
+      if (e - s > maxLen) break;
       const motion = (prefix[e] - prefix[s]) / (e - s);
       if (motion < 1e-6) continue;
       still = 0;
@@ -62,13 +63,13 @@ export function findLoops(frames: PixelImage[], minLen = 4, limit = 5): LoopCand
     score: c.ratio + 0.6 * (1 - c.variety / (maxVariety || 1)) + 0.3 * c.still,
   }));
   // Two strides also loop, often with a slightly better seam (in profile both legs look alike),
-  // but they halve the frame rate. A loop that contains a good loop of a half or a third of its
+  // but they halve the frame rate. A loop that contains a good loop of a half, a third (...) of its
   // length is a multiple: keep the single cycle.
   const byStart = new Map<number, { len: number; score: number }[]>();
   for (const c of out) { const l = byStart.get(c.start) ?? []; l.push({ len: c.end - c.start, score: c.score }); byStart.set(c.start, l); }
   const multiple = (c: { start: number; end: number; score: number }) => {
     const L = c.end - c.start;
-    for (const k of [2, 3]) {
+    for (const k of [2, 3, 4, 5, 6]) {
       if (L / k < minLen) continue;
       for (let s = c.start - 2; s <= c.end - Math.round(L / k) + 2; s++)
         for (const o of byStart.get(s) ?? []) if (Math.abs(o.len - L / k) <= 2 && o.score <= c.score + 0.25) return true;

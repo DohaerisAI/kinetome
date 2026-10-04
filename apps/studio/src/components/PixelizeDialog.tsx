@@ -215,9 +215,31 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
 
   useEffect(() => { setPick(p => Math.min(p, variants.length - 1)); }, [variants.length]);
 
+  /** Milliseconds of source clip from frame a up to (not including) frame b. */
+  const spanMs = (a: number, b: number) => { let t = 0; for (let i = a; i < b; i++) t += src?.durations[i] ?? 100; return t; };
+  // Video: always search the whole chosen range of the clip, never an order already cut to a
+  // loop (a second search there finds half strides and thins the frames twice).
+  const loopBase = useRef<number[]>([]);
   const findLoop = () => {
     const id = ++ids.current.loop;
-    worker.current?.postMessage({ type: 'loops', id, order, opts: variants[pick]?.opts ?? opts } satisfies WorkerIn);
+    const base = src?.kind === 'video' ? Array.from({ length: range[1] - range[0] }, (_, i) => range[0] + i) : order;
+    loopBase.current = base;
+    worker.current?.postMessage({ type: 'loops', id, order: base, opts: variants[pick]?.opts ?? opts, range: loopRange(base) } satisfies WorkerIn);
+  };
+  /**
+   * How long one cycle can be, in source frames. Video models tend to run slowly and a long clip
+   * repeats several strides that score alike; searching the move's stride length finds one cycle.
+   */
+  const loopRange = (base: number[]): [number, number] | undefined => {
+    if (src?.kind !== 'video' || !base.length) return undefined;
+    const ms = spanMs(base[0], base[base.length - 1] + 1) / base.length;
+    const sec = (lo: number, hi: number): [number, number] => [Math.max(4, Math.round((lo * 1000) / ms)), Math.max(6, Math.round((hi * 1000) / ms))];
+    const move = (animHint.current ?? '').replace(/-\d+$/, '');
+    // at least a full stride: half a stride (legs swapped) also looks like a loop in profile
+    if (move === 'run' || move === 'dash') return sec(0.6, 1.4);
+    if (move === 'walk') return sec(0.8, 2);
+    if (move === 'idle') return sec(1, 3);
+    return sec(0.35, 2);
   };
 
   // ---------- frame strip editing ----------
@@ -252,8 +274,9 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
   const applyLoop = (l: LoopCandidate) => {
     // Footage runs at 24 fps; game loops play at up to 16. Keep frames spread evenly over one
     // cycle so the loop plays at ~LOOP_FPS with the same speed as the source.
-    const loopOrder = order.slice(l.start, l.end);
-    const ms = loopOrder.reduce((t, i) => t + (src?.durations[i] ?? 100), 0);
+    const base = loopBase.current.length ? loopBase.current : order;
+    const loopOrder = base.slice(l.start, l.end);
+    const ms = spanMs(loopOrder[0], base[l.end] ?? loopOrder[loopOrder.length - 1] + 1);
     const keep = src?.kind === 'video' ? Math.max(6, Math.min(loopOrder.length, Math.round((ms / 1000) * LOOP_FPS))) : loopOrder.length;
     const picked = pickEvenly(0, loopOrder.length, keep).map(i => loopOrder[i]);
     const fps = ms > 0 ? Math.max(1, Math.min(30, Math.round((picked.length * 1000) / ms))) : srcFps;
