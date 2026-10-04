@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { designMovePrompt, designPalette, hexToRgb, layoutFor, newMove, PLATFORMER_MOVES, slugify, videoKeyFor, videoMovePrompt, type MoveDraft, type PixelImage } from '@kinetome/core';
-import { videoFirstFrame } from '@kinetome/pixel';
+import { designMovePrompt, designPalette, designProfilePrompt, hexToRgb, layoutFor, newMove, PLATFORMER_MOVES, slugify, usesProfile, videoKeyFor, videoMovePrompt, type MoveDraft, type PixelImage } from '@kinetome/core';
+import { estimateBackground, keepMainFigure, removeBackground, videoFirstFrame } from '@kinetome/pixel';
 import { api, type CodeEvent, type Packed, type Usage } from '../../api.ts';
 import { Icon } from '../../icons.tsx';
 import { Orb } from '../Orb.tsx';
 import { ProgramHistory } from './ProgramHistory.tsx';
 import { mergeIntoAsset } from '../../merge.ts';
-import { canvasToPng, download, loadImage, pixelsToCanvas, unpackFrames, useImage } from '../../pixels.ts';
+import { canvasToPng, download, loadImage, pixelsToCanvas, toPixels, unpackFrames, useImage } from '../../pixels.ts';
 import { AnimPreview } from '../AnimPreview.tsx';
 import { FrameThumb } from '../FrameThumb.tsx';
 import { ClaudeButton, CopyButton, Field, PromptBox, usageText, type TabProps } from './shared.tsx';
@@ -414,19 +414,40 @@ function AnimateStep({ projectId, design: d, assets, model, update, notify, fail
  * The video route: the character's sprite on a key-colour first frame plus a tested prompt for
  * any image-to-video model; the clip comes back through Import, which keys, loops and pixelates it.
  */
-function VideoRoute({ projectId, design: d, assets, importFor, move: m }: EditorProps) {
+function VideoRoute({ projectId, style, design: d, assets, importFor, update, fail, move: m }: EditorProps) {
   const [open, setOpen] = useState(false);
-  const [sprite, setSprite] = useState<PixelImage | null>(null);
+  const [idleSprite, setIdleSprite] = useState<PixelImage | null>(null);
+  const [profile, setProfile] = useState<PixelImage | null>(null);
+  const [useIdle, setUseIdle] = useState(false);
+  const profileInput = useRef<HTMLInputElement>(null);
   const linked = d.assetId ? assets.find(a => a.id === d.assetId) : undefined;
+  const sideView = usesProfile(m);
   useEffect(() => {
     let live = true;
-    setSprite(null);
+    setIdleSprite(null);
     if (!open || !linked) return;
     const idle = linked.animations.find(a => a.name === 'idle') ?? linked.animations[0];
     const rect = linked.frames[idle?.frames[0] ?? 0];
-    if (rect) unpackFrames(api.sheetUrl(projectId, linked), [rect]).then(([f]) => live && setSprite(f), () => {});
+    if (rect) unpackFrames(api.sheetUrl(projectId, linked), [rect]).then(([f]) => live && setIdleSprite(f), () => {});
     return () => { live = false; };
   }, [open, projectId, linked]);
+  // the side-view still, with its backdrop and any stray marks removed
+  useEffect(() => {
+    let live = true;
+    setProfile(null);
+    if (!open || !d.profile) return;
+    loadImage(api.profileUrl(projectId, d.id, d.profile)).then(img => {
+      if (!live) return;
+      const px = toPixels(img);
+      let f: PixelImage = { width: px.width, height: px.height, data: px.data };
+      const bg = estimateBackground(f);
+      if (bg) f = removeBackground(f, bg, 0.09, true);
+      setProfile(keepMainFigure(f));
+    }, () => {});
+    return () => { live = false; };
+  }, [open, projectId, d.id, d.profile]);
+  const sprite = sideView && profile && !useIdle ? profile : idleSprite;
+  const fromProfile = sprite === profile && !!profile;
   // key colour from what the sprite actually wears (falls back to the design's part colours)
   const key = useMemo(() => {
     const colors = new Set<string>(designPalette(d));
@@ -444,7 +465,12 @@ function VideoRoute({ projectId, design: d, assets, importFor, move: m }: Editor
     ctx.clearRect(0, 0, c.width, c.height);
     ctx.drawImage(pixelsToCanvas(frame), 0, 0, c.width, c.height);
   }, [frame]);
-  const saveFrame = async () => { if (frame) download(`${slugify(d.name)}-first-frame-${key.name}.png`, await canvasToPng(pixelsToCanvas(frame))); };
+  const uploadProfile = async (files: FileList | null) => {
+    const f = files?.[0];
+    if (!f) return;
+    try { update(await api.uploadProfile(projectId, d.id, f)); setUseIdle(false); } catch (e) { fail(e); }
+  };
+  const saveFrame = async () => { if (frame) download(`${slugify(d.name)}-${fromProfile ? 'side' : 'idle'}-first-frame-${key.name}.png`, await canvasToPng(pixelsToCanvas(frame))); };
 
   return (
     <section className="card step video-route">
@@ -458,22 +484,38 @@ function VideoRoute({ projectId, design: d, assets, importFor, move: m }: Editor
       {open ? (
         <div className="vr-body">
           {!linked ? <p className="dim small">Import {d.name}'s reference sprite first: the video starts from it.</p> : (
-            <div className="vr-grid">
-              <div className="vr-frame">
-                <canvas ref={preview} width={180} height={180} aria-label="First frame preview" />
-                <button onClick={() => void saveFrame()} disabled={!frame}><Icon name="download" /> First frame</button>
+            <>
+              {sideView && (
+                <div className={profile ? 'vr-profile ok' : 'vr-profile'}>
+                  <div>
+                    <strong>{profile ? 'Side-view still ready' : 'Side-view still (recommended)'}</strong>
+                    <p className="dim small">A video keeps its first frame's angle: {d.name}'s idle sprite is three-quarter, so a run from it comes out three-quarter or twists mid-clip. Have Gemini redraw {d.name} in side view once; every side-view move uses it.</p>
+                  </div>
+                  <div className="btnrow">
+                    <CopyButton text={designProfilePrompt(style, d)} label="Copy Gemini prompt" primary={!profile} />
+                    <button onClick={() => profileInput.current?.click()}><Icon name="upload" /> {profile ? 'Replace' : 'Upload'} side view…</button>
+                    {profile && <label className="toggle"><input type="checkbox" checked={useIdle} onChange={e => setUseIdle(e.target.checked)} /> Use the idle sprite instead</label>}
+                    <input ref={profileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { void uploadProfile(e.target.files); e.target.value = ''; }} />
+                  </div>
+                </div>
+              )}
+              <div className="vr-grid">
+                <div className="vr-frame">
+                  <canvas ref={preview} width={180} height={180} aria-label="First frame preview" />
+                  <button onClick={() => void saveFrame()} disabled={!frame}><Icon name="download" /> First frame</button>
+                </div>
+                <ol className="vr-steps">
+                  <li>Download the first frame ({fromProfile ? 'side view' : 'idle sprite'} on {key.name}, picked because it clashes least with {d.name}'s colours).</li>
+                  <li>In the video model: upload it as the <strong>start image</strong>{plan.pinEnd ? <> and also as the <strong>end / last frame</strong></> : null}; <strong>{plan.seconds} s</strong>, square 1:1, audio off.</li>
+                  <li>Paste the prompt and the negative prompt (if the model has one).
+                    <div className="btnrow"><CopyButton text={plan.prompt} label="Copy prompt" /><CopyButton text={plan.negative} label="Copy negative" primary={false} /></div>
+                  </li>
+                  <li>Import the clip. {plan.cut}
+                    <div className="btnrow"><button onClick={() => importFor({ assetId: d.assetId, anim: m.id })}><Icon name="upload" /> Import video…</button></div>
+                  </li>
+                </ol>
               </div>
-              <ol className="vr-steps">
-                <li>Download the first frame ({d.name} on {key.name}, picked because it clashes least with {d.name}'s colours).</li>
-                <li>In the video model: upload it as the <strong>start image</strong>{plan.pinEnd ? <> and also as the <strong>end / last frame</strong></> : null}; <strong>{plan.seconds} s</strong>, square 1:1, audio off.</li>
-                <li>Paste the prompt and the negative prompt (if the model has one).
-                  <div className="btnrow"><CopyButton text={plan.prompt} label="Copy prompt" /><CopyButton text={plan.negative} label="Copy negative" primary={false} /></div>
-                </li>
-                <li>Import the clip. {plan.cut}
-                  <div className="btnrow"><button onClick={() => importFor({ assetId: d.assetId, anim: m.id })}><Icon name="upload" /> Import video…</button></div>
-                </li>
-              </ol>
-            </div>
+            </>
           )}
           <PromptBox text={`${plan.prompt}\n\nNegative: ${plan.negative}`} />
         </div>

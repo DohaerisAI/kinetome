@@ -137,7 +137,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
       setRange([0, d.frames.length]);
       // video is smooth footage, never pixel art (compression blocks fool grid detection): resample
       // it, hold the torso still (legs swing), finish with crisp edges, keep its own colours
-      if (d.kind === 'video') setOpts(o => ({ ...o, mode: 'illustration', anchor: 'body', crisp: true, palette: o.palette === 'auto-bible' ? 'auto' : o.palette, colors: Math.max(o.colors, 24) }));
+      if (d.kind === 'video') setOpts(o => ({ ...o, mode: 'illustration', anchor: 'body', crisp: true, isolate: true, palette: o.palette === 'auto-bible' ? 'auto' : o.palette, colors: Math.max(o.colors, 24) }));
       setName(d.name.replace(/[_-]+/g, ' ').trim() || 'sprite');
       if (design) { setName(design.name); setDescription(design.description); }
       else try {
@@ -579,6 +579,9 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
               </div>
               <label className="toggle block" title="Contrast lift and a darkened edge: makes smooth video or painted art read as pixel art">
                 <input type="checkbox" checked={!!opts.crisp} onChange={e => set('crisp', e.target.checked)} /> Crisp edges (video, painted art)
+              </label>
+              <label className="toggle block" title="Removes marks far from the character: generator watermarks, logos, captions">
+                <input type="checkbox" checked={!!opts.isolate} onChange={e => set('isolate', e.target.checked)} /> Drop watermarks and stray marks
               </label>
             </section>
           </div>

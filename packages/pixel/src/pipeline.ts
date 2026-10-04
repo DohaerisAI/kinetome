@@ -1,7 +1,7 @@
 import { countColors, hardenAlpha, snapToPalette, type PixelImage, type Rect } from '@kinetome/core';
 import { anchorFrames, type Anchor } from './anchor.ts';
 import { estimateBackground, isChroma, removeBackground, type Background, type RGB } from './background.ts';
-import { addOutline, hasOutline, removeOrphans } from './cleanup.ts';
+import { addOutline, hasOutline, keepMainFigure, removeOrphans } from './cleanup.ts';
 import { bodyHeight, contentBounds, crop, pad } from './image.ts';
 import { mapPaletteTo, sharedPalette } from './palette.ts';
 import { detectPixelScale, gridAt, resize, sampleGrid, type GridGuess } from './scale.ts';
@@ -38,6 +38,8 @@ export interface PixelizeOptions {
    * every edge pixel darkened, so the downscale reads as pixel art instead of a blurry photo.
    */
   crisp?: boolean;
+  /** Drop marks far from the character (generator watermarks, captions). */
+  isolate?: boolean;
 }
 
 export interface PixelizeResult {
@@ -127,6 +129,7 @@ export function pixelize(input: PixelImage[], o: PixelizeOptions): PixelizeResul
   // 1. background (one backdrop for all frames, estimated from the first)
   const bg = o.background === 'none' ? null : estimateBackground(input[0]);
   let frames = bg ? input.map(f => removeBackground(f, bg, o.tolerance, useHoles(o, bg))) : input;
+  if (o.isolate) frames = frames.map(f => keepMainFigure(f));
 
   // 2. mode + grids. AI sheets can draw poses at slightly different block sizes, so each
   //    frame gets its own grid when detection is confident and close to the consensus.

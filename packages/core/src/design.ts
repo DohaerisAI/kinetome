@@ -222,6 +222,28 @@ export function videoKeyFor(colors: string[]): VideoKey {
   return gap(KEYS[0]) >= gap(KEYS[1]) ? KEYS[0] : KEYS[1];
 }
 
+/**
+ * Gemini prompt for the side-view still that side-view clips start from. A video model keeps
+ * the first frame's angle, so a three-quarter idle sprite gives a three-quarter run. 2D games
+ * "cheat" the profile a little toward the camera so the chest and far arm still read.
+ */
+export function designProfilePrompt(style: StyleBible, d: CharacterDesign): string {
+  return [
+    `Redraw the exact same character as in the attached reference image of ${d.name}: same design, proportions, colors, outfit, props and art style (same pixel size, outline and palette).`,
+    `The character: ${describe(d)}`,
+    ...invariantLines(d, false),
+    'Pose: one single full-body figure in a relaxed ready stance, in SIDE VIEW facing right, the way 2D platformer characters run and walk: we see the right side of the body, the face points at the right edge of the image, the body turned just slightly toward the viewer so a little of the chest and the far shoulder still show. Both feet on the ground, arms loose, nothing cut off.',
+    'Centered, about 60% of the image height, with empty space above the head and in front of the character.',
+    ...colorLines(d),
+    `Pixel art: crisp square pixels, no blur, no anti-aliasing.${d.outline ? ` A clean 1-pixel outline in ${d.outline}.` : ''}`,
+    ...(style.notes.trim() ? [`Art direction: ${style.notes.trim()}`] : []),
+    ...BACKDROP,
+  ].join('\n');
+}
+
+/** Moves whose clip should start from the side-view still (everything but standing idle). */
+export const usesProfile = (m: Pick<MoveDraft, 'id'>) => m.id.replace(/-\d+$/, '') !== 'idle';
+
 export interface VideoPlan {
   prompt: string;
   negative: string;
@@ -232,7 +254,7 @@ export interface VideoPlan {
   cut: string;
 }
 
-const SIDE_FACING = 'Side profile: we keep seeing its right side at the same angle as the first frame for the whole clip; its face points at the right edge of the frame and we never see its chest or its back.';
+const SIDE_FACING = 'Side view: we keep seeing its right side at the same angle as the first frame for the whole clip; its face points at the right edge of the frame, it never turns toward the camera and we never see its back.';
 const LOCO = new Set(['walk', 'run']);
 
 /** Image-to-video request for one move, built from the character's design and the move draft. */

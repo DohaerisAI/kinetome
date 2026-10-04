@@ -1,14 +1,21 @@
 import type { PixelImage } from '@kinetome/core';
-import { contentBounds, createImage } from './image.ts';
+import { contentBounds, createImage, crop } from './image.ts';
+import { resize } from './scale.ts';
 
 /**
  * First frame for an image-to-video model: the sprite scaled up by a whole number
  * (nearest neighbour, so the pixels stay square) on a square key-colour canvas, about 58% of
  * its height with the feet at 82%. The headroom keeps a raised weapon or a jump inside the
- * clip; a figure that fills the frame gets its attack clipped.
+ * clip; a figure that fills the frame gets its attack clipped. Art bigger than that is shrunk.
  */
 export function videoFirstFrame(sprite: PixelImage, key: [number, number, number], size = 960): PixelImage {
-  const b = contentBounds(sprite, 128);
+  let b = contentBounds(sprite, 128);
+  // big painted art (a Gemini redraw) is shrunk smoothly to the target height instead
+  if (b && b.h > size * 0.58) {
+    const s = (size * 0.58) / b.h;
+    sprite = resize(crop(sprite, b), Math.max(1, Math.round(b.w * s)), Math.max(1, Math.round(b.h * s)), 'smooth');
+    b = contentBounds(sprite, 128);
+  }
   const out = createImage(size, size);
   for (let i = 0; i < out.data.length; i += 4) out.data.set([key[0], key[1], key[2], 255], i);
   if (!b) return out;

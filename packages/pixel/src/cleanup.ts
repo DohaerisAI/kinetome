@@ -78,3 +78,36 @@ export function hasOutline(img: PixelImage): boolean {
   const dark = all[Math.floor(all.length * 0.3)];
   return edge.filter(l => l <= dark).length / edge.length >= 0.6;
 }
+
+/**
+ * Keeps the character and drops far-away marks: watermarks, logos and captions that video
+ * and image generators stamp in a corner. The biggest blob is the character; other blobs stay
+ * when they are big (a detached weapon or effect) or close to it (a hand, a flying strand).
+ */
+export function keepMainFigure(img: PixelImage, nearFraction = 0.08): PixelImage {
+  const { width: W, height: H, data } = img;
+  const lab = new Int32Array(W * H).fill(-1);
+  const blobs: { n: number; x0: number; y0: number; x1: number; y1: number }[] = [];
+  for (let p = 0; p < W * H; p++) {
+    if (lab[p] >= 0 || data[p * 4 + 3] < 128) continue;
+    const id = blobs.length, b = { n: 0, x0: W, y0: H, x1: 0, y1: 0 };
+    const stack = [p]; lab[p] = id;
+    while (stack.length) {
+      const q = stack.pop()!, x = q % W, y = (q - x) / W;
+      b.n++; b.x0 = Math.min(b.x0, x); b.y0 = Math.min(b.y0, y); b.x1 = Math.max(b.x1, x); b.y1 = Math.max(b.y1, y);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy, k = ny * W + nx;
+        if (nx >= 0 && ny >= 0 && nx < W && ny < H && lab[k] < 0 && data[k * 4 + 3] >= 128) { lab[k] = id; stack.push(k); }
+      }
+    }
+    blobs.push(b);
+  }
+  if (blobs.length <= 1) return img;
+  const main = blobs.reduce((a, b) => (b.n > a.n ? b : a));
+  const near = Math.max(4, Math.round(Math.max(W, H) * nearFraction));
+  const keep = blobs.map(b => b === main || b.n >= main.n * 0.2 ||
+    (b.x1 >= main.x0 - near && b.x0 <= main.x1 + near && b.y1 >= main.y0 - near && b.y0 <= main.y1 + near));
+  const out = { width: W, height: H, data: new Uint8ClampedArray(data) };
+  for (let p = 0; p < W * H; p++) if (lab[p] >= 0 && !keep[lab[p]]) out.data[p * 4 + 3] = 0;
+  return out;
+}

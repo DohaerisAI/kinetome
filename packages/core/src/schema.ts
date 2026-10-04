@@ -167,6 +167,8 @@ export const CharacterDesign = z.object({
   programs: z.record(z.string(), z.string()).default({}),
   /** Parts, joints and keyframe clips drawn in the rig editor (null until set up). */
   rig: CharacterRig.nullable().optional(),
+  /** Side-profile still (file under characters/<id>/profile/): the first frame for side-view moves. */
+  profile: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

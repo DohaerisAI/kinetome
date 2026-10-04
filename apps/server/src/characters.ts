@@ -323,6 +323,40 @@ characters.post('/projects/:p/characters/:c/code/animate', async c => {
   });
 });
 
+// ---------- side-profile still (first frame for side-view video clips) ----------
+
+const profileDir = (p: string, c: string) => join(store.projectPath(p), 'characters', c, 'profile');
+
+characters.post('/projects/:p/characters/:c/profile', async c => {
+  const p = c.req.param('p'), id = c.req.param('c');
+  const d = await store.getCharacter(p, id);
+  const file = (await c.req.formData()).get('image');
+  if (!(file instanceof File)) throw new store.HttpError(400, 'missing image');
+  if (file.size > 12 * 1024 * 1024) throw new store.HttpError(400, 'image too large (max 12 MB)');
+  const ext = /\.(png|jpe?g|webp)$/i.exec(file.name)?.[1]?.toLowerCase().replace('jpeg', 'jpg') ?? 'png';
+  const name = `${Date.now()}.${ext}`;
+  await mkdir(profileDir(p, id), { recursive: true });
+  await writeFile(join(profileDir(p, id), name), new Uint8Array(await file.arrayBuffer()));
+  if (d.profile) await rm(join(profileDir(p, id), d.profile), { force: true });
+  return c.json(await store.saveCharacter(p, id, { ...d, profile: name }));
+});
+
+characters.get('/projects/:p/characters/:c/profile/:f', async c => {
+  const f = c.req.param('f');
+  if (!/^[0-9]+\.(png|jpg|webp)$/.test(f)) throw new store.HttpError(400, 'bad file');
+  const buf = await readFile(join(profileDir(c.req.param('p'), c.req.param('c')), f)).catch(() => null);
+  if (!buf) throw new store.HttpError(404, 'not found');
+  const type = f.endsWith('.jpg') ? 'image/jpeg' : f.endsWith('.webp') ? 'image/webp' : 'image/png';
+  return c.body(buf, 200, { 'content-type': type, 'cache-control': 'max-age=31536000, immutable' });
+});
+
+characters.delete('/projects/:p/characters/:c/profile', async c => {
+  const p = c.req.param('p'), id = c.req.param('c');
+  const d = await store.getCharacter(p, id);
+  if (d.profile) await rm(join(profileDir(p, id), d.profile), { force: true });
+  return c.json(await store.saveCharacter(p, id, { ...d, profile: null }));
+});
+
 // ---------- pose reference images per move ----------
 
 characters.post('/projects/:p/characters/:c/moves/:m/refs', async c => {

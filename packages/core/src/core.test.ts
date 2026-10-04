@@ -266,10 +266,13 @@ test('video route: key avoids the character colours; locomotion is 5 s pinned in
   const design = { id: 't', name: 'Thief', description: 'hooded thief', invariants: [], parts: [], outline: '#111', pixelHeight: 64 } as never;
   const run = videoMovePrompt(design, newMove('run'), { hex: '#00FF00', name: 'green' });
   assert.equal(run.seconds, 5); assert.equal(run.pinEnd, true);
-  assert.match(run.prompt, /treadmill/); assert.match(run.prompt, /never see its chest or its back/); assert.match(run.prompt, /green \(#00FF00\)/);
+  assert.match(run.prompt, /treadmill/); assert.match(run.prompt, /never see its back/); assert.match(run.prompt, /green \(#00FF00\)/);
   assert.match(run.negative, /standing still/);
   const death = videoMovePrompt(design, newMove('death'), { hex: '#FF00FF', name: 'magenta' });
   assert.equal(death.pinEnd, false);
   const atk = videoMovePrompt(design, { ...newMove('attack'), effects: 'red slash arc' }, { hex: '#FF00FF', name: 'magenta' });
   assert.match(atk.prompt, /returns to the starting ready pose/); assert.match(atk.prompt, /no glow/);
+  const { designProfilePrompt, usesProfile, DEFAULT_STYLE: S } = await import('./index.ts');
+  assert.match(designProfilePrompt(S, design), /SIDE VIEW facing right/);
+  assert.equal(usesProfile({ id: 'idle' }), false); assert.equal(usesProfile({ id: 'run-2' }), true);
 });

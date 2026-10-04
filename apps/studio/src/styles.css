@@ -381,6 +381,9 @@ button.small { font-size: 12px; padding: 3px 7px; }
 .step-n { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font: 700 11px var(--mono); background: var(--panel-3); color: var(--dim); flex: none; }
 .step-n.done { background: rgba(79,209,139,.18); color: var(--ok); }
 .video-route .step-n { background: rgba(155,128,255,.16); color: var(--accent); }
+.vr-profile { display: grid; gap: 8px; padding: 12px 14px; margin-bottom: 14px; border-radius: 10px; border: 1px dashed var(--line-3); background: rgba(155,128,255,.05); }
+.vr-profile.ok { border-style: solid; border-color: rgba(79,209,139,.35); background: rgba(79,209,139,.05); }
+.vr-profile p { margin: 4px 0 0; }
 .vr-grid { display: grid; grid-template-columns: 180px 1fr; gap: 18px; align-items: start; margin-bottom: 10px; }
 .vr-frame { display: grid; gap: 8px; }
 .vr-frame canvas { width: 180px; height: 180px; border-radius: 10px; border: 1px solid var(--line-2); image-rendering: pixelated; background: var(--panel-2); }

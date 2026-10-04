@@ -319,3 +319,15 @@ test('videoFirstFrame: whole-number upscale on the key colour with headroom', as
   assert.ok(b.h <= 960 * 0.58 && b.h > 960 * 0.45, `figure height ${b.h}`);
   assert.ok(Math.abs(b.y + b.h - 960 * 0.82) <= 1, 'feet at 82%');
 });
+
+test('keepMainFigure drops a corner watermark, keeps a detached nearby hand', async () => {
+  const { keepMainFigure } = await import('./index.ts');
+  const img = createImage(100, 100);
+  const box = (x0: number, y0: number, w: number, h: number) => { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) img.data.set([90, 60, 40, 255], (y * 100 + x) * 4); };
+  box(40, 30, 16, 40);   // character
+  box(59, 45, 3, 3);     // hand just off the body
+  box(85, 92, 12, 4);    // watermark in the corner
+  const out = keepMainFigure(img);
+  const a = (x: number, y: number) => out.data[(y * 100 + x) * 4 + 3];
+  assert.equal(a(45, 50), 255); assert.equal(a(60, 46), 255, 'hand kept'); assert.equal(a(90, 93), 0, 'watermark dropped');
+});

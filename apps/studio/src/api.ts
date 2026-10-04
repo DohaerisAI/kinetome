@@ -102,6 +102,12 @@ export const api = {
     const f = new FormData(); f.set('image', file, file.name);
     return call<CharacterDesign>(`/projects/${p}/characters/${id}/moves/${move}/refs`, { method: 'POST', body: f });
   },
+  uploadProfile: (p: string, id: string, file: File) => {
+    const f = new FormData(); f.set('image', file, file.name);
+    return call<CharacterDesign>(`/projects/${p}/characters/${id}/profile`, { method: 'POST', body: f });
+  },
+  deleteProfile: (p: string, id: string) => call<CharacterDesign>(`/projects/${p}/characters/${id}/profile`, { method: 'DELETE' }),
+  profileUrl: (p: string, id: string, file: string) => `/api/projects/${p}/characters/${id}/profile/${file}`,
   deleteMoveRef: (p: string, id: string, move: string, file: string) => call<CharacterDesign>(`/projects/${p}/characters/${id}/moves/${move}/refs/${file}`, { method: 'DELETE' }),
   moveRefUrl: (p: string, id: string, move: string, file: string) => `/api/projects/${p}/characters/${id}/moves/${move}/refs/${file}`,
   // projects
