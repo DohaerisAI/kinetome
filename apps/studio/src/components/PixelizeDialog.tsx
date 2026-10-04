@@ -22,6 +22,8 @@ interface Segment { name: string; start: number; fps: number; loop: boolean }
 
 /** Playback rate loops picked from video are thinned to. */
 const LOOP_FPS = 16;
+/** One stride at a typical 2D game pace, seconds; video clips of these moves are sped up to it. */
+const STRIDE_SECONDS: Record<string, number> = { run: 0.67, dash: 0.5, walk: 1 };
 
 interface Target { asset: SpriteAsset; img: HTMLImageElement; palette: string[]; height: number }
 
@@ -279,7 +281,10 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
     const ms = spanMs(loopOrder[0], base[l.end] ?? loopOrder[loopOrder.length - 1] + 1);
     const keep = src?.kind === 'video' ? Math.max(6, Math.min(loopOrder.length, Math.round((ms / 1000) * LOOP_FPS))) : loopOrder.length;
     const picked = pickEvenly(0, loopOrder.length, keep).map(i => loopOrder[i]);
-    const fps = ms > 0 ? Math.max(1, Math.min(30, Math.round((picked.length * 1000) / ms))) : srcFps;
+    // Video models often move in slow motion (a 1 s run stride); locomotion plays at a game pace.
+    const pace = src?.kind === 'video' ? STRIDE_SECONDS[(animHint.current ?? '').replace(/-\d+$/, '')] : undefined;
+    const fps = pace ? Math.max(8, Math.min(24, Math.round(picked.length / pace)))
+      : ms > 0 ? Math.max(1, Math.min(30, Math.round((picked.length * 1000) / ms))) : srcFps;
     setOrder(picked);
     setSegments(segs => [{ ...(segs[0] ?? { name: 'default', fps, loop: true }), fps, start: 0, loop: true }]);
     setLoops(null);
