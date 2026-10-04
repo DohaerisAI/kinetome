@@ -148,7 +148,7 @@ function MoveEditor(props: EditorProps) {
 
   return (
     <div className="move-editor">
-      <Step n={1} title="Describe" done={!!m.description.trim()}
+      <Step n={1} title="Describe" hint="optional · how the move looks; it goes into the video prompt" done={!!m.description.trim()}
         right={<button className="icon-btn" onClick={removeMove} title="Remove move" aria-label="Remove move"><Icon name="trash" /></button>}>
         <div className="move-title">
           <input className="title-input small" value={nameDraft} onChange={e => setNameDraft(e.target.value)} onBlur={commitName} aria-label="Move name" />
@@ -162,14 +162,12 @@ function MoveEditor(props: EditorProps) {
           <input value={m.effects} onChange={e => setMove({ effects: e.target.value })} placeholder="e.g. leaf tornado that withers green to brown, shockwave, dust, impact flash" />
         </Field>
         <div className="move-params">
-          <Field label="Frames" hint="more = smoother"><input type="number" min={1} max={24} value={m.frames} onChange={e => setFrames(+e.target.value)} /></Field>
-          <Field label="FPS"><input type="number" min={1} max={60} value={m.fps} onChange={e => setMove({ fps: Math.max(1, Math.min(60, +e.target.value || 1)) })} /></Field>
           <Field label="Weight">
             <div className="seg compact" role="radiogroup">
               {WEIGHTS.map(w => <button key={w} role="radio" aria-checked={m.weight === w} className={m.weight === w ? 'active' : ''} onClick={() => setMove({ weight: w })}>{w}</button>)}
             </div>
           </Field>
-          <Field label="Playback"><label className="toggle"><input type="checkbox" checked={m.loop} onChange={e => setMove({ loop: e.target.checked })} /> <Icon name="loop" /> loop</label></Field>
+          <Field label="Playback" hint="loops, or plays once"><label className="toggle"><input type="checkbox" checked={m.loop} onChange={e => setMove({ loop: e.target.checked })} /> <Icon name="loop" /> loop</label></Field>
         </div>
       </Step>
 
@@ -178,6 +176,11 @@ function MoveEditor(props: EditorProps) {
 
       <details className="alt-routes" open={altOpen} onToggle={e => setAltOpen((e.currentTarget as HTMLDetailsElement).open)}>
         <summary><Icon name="code" /> <strong>Other routes</strong> <span className="dim small">Claude animates with code on {d.name}'s art, or import a finished sprite sheet</span></summary>
+
+      <div className="move-params alt-params">
+        <Field label="Frames" hint="for Claude and sprite sheets; video picks its own"><input type="number" min={1} max={24} value={m.frames} onChange={e => setFrames(+e.target.value)} /></Field>
+        <Field label="FPS"><input type="number" min={1} max={60} value={m.fps} onChange={e => setMove({ fps: Math.max(1, Math.min(60, +e.target.value || 1)) })} /></Field>
+      </div>
 
       <Step n={1} title="Poses" hint="Claude choreographs it with the lore; edit freely" done={posesReady}
         right={<ClaudeButton label={m.poses.some(p => p.trim()) ? 'Redraft' : 'Draft with Claude'} busyLabel="Choreographing…" busy={busy === 'move'} onClick={() => draft(false)} title="~2-4k tokens" />}>

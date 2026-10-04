@@ -934,3 +934,14 @@ button.danger { color: var(--err); }
 .fx-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .fx-tile strong { font-size: 13px; }
 @media (max-width: 900px) { .fx-body { grid-template-columns: 1fr; } }
+
+.pzs-progress { display: grid; align-content: center; justify-items: center; gap: 14px; }
+.pzs-progress ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.pzs-progress li { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 13px; }
+.pzs-progress li.ok { color: var(--dim); }
+.pzs-progress li.now { color: var(--text); }
+.pzs-dot { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font: 700 10px var(--mono); background: var(--panel-3); }
+.pzs-progress li.ok .pzs-dot { background: rgba(79,209,139,.18); color: var(--ok); }
+.pzs-progress li.now .pzs-dot { background: var(--accent-soft); color: var(--accent-2); animation: pzs-pulse 1.2s var(--ease) infinite; }
+@keyframes pzs-pulse { 50% { box-shadow: 0 0 0 5px rgba(139,108,255,.12); } }
+.alt-params { margin: 0 0 12px; }

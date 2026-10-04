@@ -61,7 +61,12 @@ self.onmessage = (e: MessageEvent<WorkerIn>) => {
       post({ type: 'result', id: m.id, results, quality: results.map(r => assessResult(r, m.maxColors)) });
     } else if (m.type === 'loops') {
       // Compare cleaned, anchored frames: drift and background noise would hide real loops.
-      const clean = pixelize(m.order.map(i => working[i]), { ...effective(m.opts), outline: null }).frames;
+      // Loop search only compares silhouettes and shading: a small size with no palette, clean-up
+      // or finish is several times faster and finds the same loops.
+      const clean = pixelize(m.order.map(i => working[i]), {
+        ...effective(m.opts), outline: null, palette: 'fixed', fixedPalette: [], cleanup: false, crisp: false,
+        targetHeight: Math.min(m.opts.targetHeight, 48),
+      }).frames;
       post({ type: 'loops', id: m.id, loops: findLoops(clean, m.range?.[0] ?? 4, 5, m.range?.[1] ?? Infinity) });
     }
   } catch (err) {

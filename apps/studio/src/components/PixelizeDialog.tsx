@@ -8,7 +8,7 @@ import {
   type LoopCandidate, type MotionPreset, type PixelizeOptions, type PixelizeResult, type QualityReport,
 } from '@kinetome/pixel';
 import { api, type AssetDraft } from '../api.ts';
-import { decodeFiles, type Decoded } from '../decode.ts';
+import { decodeFiles, isVideo, type Decoded } from '../decode.ts';
 import { mergeIntoAsset } from '../merge.ts';
 import { canvasToPng, loadImage, toPixels } from '../pixels.ts';
 import type { Prepared, WorkerIn, WorkerOut } from '../pixelize.worker.ts';
@@ -23,6 +23,8 @@ interface Segment { name: string; start: number; fps: number; loop: boolean }
 
 /** Playback rate loops picked from video are thinned to. */
 const LOOP_FPS = 16;
+/** Calmer moves need fewer frames: an idle reads fine (and stays light) at 8 per second. */
+const MOVE_FPS: Record<string, number> = { idle: 8, fall: 12 };
 /** One stride at a typical 2D game pace, seconds; video clips of these moves are sped up to it. */
 const STRIDE_SECONDS: Record<string, number> = { run: 0.67, dash: 0.5, walk: 1 };
 
@@ -47,6 +49,17 @@ interface Props {
 }
 
 export const BRIEF_KEY = (pid: string) => `sprite.brief.${pid}`;
+
+/**
+ * One decode per set of files. React runs effects twice in development, and two decodes of
+ * the same video at once (each playing and seeking) took three times as long as one.
+ */
+const decoding = new WeakMap<File[], Promise<Decoded>>();
+const decodeOnce = (files: File[]) => {
+  let p = decoding.get(files);
+  if (!p) { p = decodeFiles(files); decoding.set(files, p); }
+  return p;
+};
 
 function variantsFor(base: PixelizeOptions, axis: Axis): { label: string; opts: PixelizeOptions }[] {
   const h = base.targetHeight;
@@ -141,7 +154,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
   useEffect(() => {
     let live = true;
     setLoading(true);
-    decodeFiles(files).then(d => {
+    decodeOnce(files).then(d => {
       if (!live) return;
       setSrc(d);
       setRange([0, d.frames.length]);
@@ -217,6 +230,8 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
   // ---------- run ----------
   useEffect(() => {
     if (!prepared || !order.length) return;
+    // video: the whole clip is about to be cut to one loop; converting all of it first is wasted work
+    if (autoLoop.current === 'pending' || autoLoop.current === 'waiting') return;
     const t = setTimeout(() => {
       const id = ++ids.current.run;
       setRunning(true);
@@ -283,20 +298,34 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
     if (p.name) { const pre = presetFor(p.name); if (pre) { next.fps = pre.fps; next.loop = pre.loop; } }
     return next;
   }));
+  // The cycle a loop came from (source frames + its time), so the frame count can change later
+  // without searching again.
+  const [cut, setCut] = useState<{ frames: number[]; ms: number } | null>(null);
+  const moveId = (animHint.current ?? '').replace(/-\d+$/, '');
+  /** Picks n frames evenly from a cycle and the fps that plays it at the right speed. */
+  const thinCut = (c: { frames: number[]; ms: number }, n: number) => {
+    const picked = pickEvenly(0, c.frames.length, Math.max(2, Math.min(c.frames.length, n))).map(i => c.frames[i]);
+    // Video models often move in slow motion (a 1 s run stride); locomotion plays at a game pace.
+    const pace = src?.kind === 'video' ? STRIDE_SECONDS[moveId] : undefined;
+    const fps = pace ? Math.max(4, Math.min(30, Math.round(picked.length / pace)))
+      : c.ms > 0 ? Math.max(1, Math.min(30, Math.round((picked.length * 1000) / c.ms))) : srcFps;
+    setOrder(picked);
+    setSegments(segs => [{ ...(segs[0] ?? { name: 'default', fps, loop: true }), fps, start: 0 }]);
+  };
   const applyLoop = (l: LoopCandidate) => {
-    // Footage runs at 24 fps; game loops play at up to 16. Keep frames spread evenly over one
-    // cycle so the loop plays at ~LOOP_FPS with the same speed as the source.
+    // Footage runs at 24 fps; game loops play at up to 16 (8 for idles). Keep frames spread
+    // evenly over one cycle.
     const base = loopBase.current.length ? loopBase.current : order;
     const loopOrder = base.slice(l.start, l.end);
     const ms = spanMs(loopOrder[0], base[l.end] ?? loopOrder[loopOrder.length - 1] + 1);
-    const keep = src?.kind === 'video' ? Math.max(6, Math.min(loopOrder.length, Math.round((ms / 1000) * LOOP_FPS))) : loopOrder.length;
-    const picked = pickEvenly(0, loopOrder.length, keep).map(i => loopOrder[i]);
-    // Video models often move in slow motion (a 1 s run stride); locomotion plays at a game pace.
-    const pace = src?.kind === 'video' ? STRIDE_SECONDS[(animHint.current ?? '').replace(/-\d+$/, '')] : undefined;
-    const fps = pace ? Math.max(8, Math.min(24, Math.round(picked.length / pace)))
-      : ms > 0 ? Math.max(1, Math.min(30, Math.round((picked.length * 1000) / ms))) : srcFps;
-    setOrder(picked);
-    setSegments(segs => [{ ...(segs[0] ?? { name: 'default', fps, loop: true }), fps, start: 0, loop: true }]);
+    const c = { frames: loopOrder, ms };
+    setCut(c);
+    // locomotion plays at a game pace, so its frame count comes from that pace (max 24 fps);
+    // everything else keeps its own timing at the move's frame rate
+    const pace = src?.kind === 'video' ? STRIDE_SECONDS[moveId] : undefined;
+    const n = src?.kind !== 'video' ? loopOrder.length : pace ? Math.round(pace * 24) : Math.round((ms / 1000) * (MOVE_FPS[moveId] ?? LOOP_FPS));
+    thinCut(c, Math.max(4, n));
+    setSegments(segs => segs.map((g, i) => (i === 0 ? { ...g, loop: true } : g)));
     setLoops(null);
   };
 
@@ -312,8 +341,10 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
     if (moveLoops) { autoLoop.current = 'waiting'; findLoop(); }
     else {
       autoLoop.current = 'done';
-      const sec = spanMs(range[0], range[1]) / 1000;
-      setCount(Math.max(6, Math.min(range[1] - range[0], Math.round(sec * LOOP_FPS))));
+      const all = Array.from({ length: range[1] - range[0] }, (_, i) => range[0] + i);
+      const c = { frames: all, ms: spanMs(range[0], range[1]) };
+      setCut(c);
+      thinCut(c, Math.round((c.ms / 1000) * (MOVE_FPS[moveId] ?? LOOP_FPS)));
     }
   }, [prepared, order.length]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -322,6 +353,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
     setCandidates(loops);
     setCandidate(0);
     if (loops.length) applyLoop(loops[0]);
+    else setOrder(o => [...o]); // no loop: convert the whole clip (the run waited for the search)
   }, [loops]); // eslint-disable-line react-hooks/exhaustive-deps
   const nextCandidate = () => {
     if (candidates.length < 2) return;
@@ -334,6 +366,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
   const chosen = results?.[pick] ?? null;
   const report = quality?.[pick] ?? null;
   const single = !!chosen && chosen.frames.length === 1;
+  const simpleReady = !!chosen && !running && autoLoop.current !== 'waiting' && autoLoop.current !== 'pending';
   const motionResult = useMemo(() => (chosen && single && motion ? generateMotion(chosen.frames[0], motion) : null), [chosen, single, motion]);
   const badFrames = useMemo(() => {
     const m = new Map<number, string[]>();
@@ -408,12 +441,20 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
           {running && <span className="dim small">working…</span>}
           {report && <span className={`badge ${report.score >= 90 ? 'ok' : report.score >= 70 ? 'warn' : 'err'}`} title="Quality score">quality {report.score}</span>}
         </div>
-        {loading && <p className="pad">Decoding…</p>}
+        {loading && <p className="pad">{files.some(isVideo) ? 'Reading the video (a few seconds)…' : 'Decoding…'}</p>}
         {!loading && src && simple && (
           <div className="pz-simple">
             <div className="pzs-preview">
-              {chosen && !running ? <AnimPreview key={`${previewFps}-${order.join(',')}`} frames={segFrames(chosen)} fps={previewFps} width={340} height={300} playing />
-                : <div className="pz-wait" style={{ width: 340, height: 300 }}>{autoLoop.current === 'waiting' ? 'Finding one clean loop…' : 'Making pixel art…'}</div>}
+              {chosen && !running && autoLoop.current !== 'waiting' ? <AnimPreview key={`${previewFps}-${order.join(',')}`} frames={segFrames(chosen)} fps={previewFps} width={340} height={300} playing />
+                : <div className="pz-wait pzs-progress" style={{ width: 340, height: 300 }}>
+                  <ol>
+                    {[['Read the video', !!src], ['Remove the background', !!prepared], ['Find one clean loop', autoLoop.current === 'done' || autoLoop.current === 'off'], ['Make the pixel art', !!chosen && !running]].map(([label, ok], i, all) => {
+                      const current = !ok && all.slice(0, i).every(x => x[1]);
+                      return <li key={String(label)} className={ok ? 'ok' : current ? 'now' : ''}><span className="pzs-dot">{ok ? <Icon name="check" size={11} /> : i + 1}</span>{label}{current ? '…' : ''}</li>;
+                    })}
+                  </ol>
+                  <span className="dim small">Kinetome does this itself: no Claude, no tokens.</span>
+                </div>}
               {chosen && <span className="dim small">{order.length} frames · {previewFps} fps · {(order.length / previewFps).toFixed(2)} s {moveLoops ? 'per loop' : 'long'} · {chosen.frames[0].width}×{chosen.frames[0].height} · {chosen.palette.length} colours</span>}
             </div>
             <div className="pzs-controls">
@@ -442,9 +483,14 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
                   </label>
                 </>
               )}
-              <label className="field"><span>Speed · {previewFps} fps</span>
-                <input type="range" min={4} max={30} value={seg?.fps ?? 12} onChange={e => patchSeg(0, { fps: +e.target.value })} aria-label="Frames per second" />
-              </label>
+              {simpleReady && cut && cut.frames.length > 2 && (
+                <label className="field"><span>Frames · {order.length} <span className="dim">(fewer = lighter and more retro, more = smoother; the speed stays the same)</span></span>
+                  <input type="range" min={Math.min(4, cut.frames.length)} max={cut.frames.length} value={order.length} onChange={e => thinCut(cut, +e.target.value)} aria-label="Frames" />
+                </label>
+              )}
+              {simpleReady && <label className="field"><span>Speed · {previewFps} fps · {(order.length / previewFps).toFixed(2)} s {moveLoops ? 'per loop' : 'long'}</span>
+                <input type="range" min={2} max={30} value={seg?.fps ?? 12} onChange={e => patchSeg(0, { fps: +e.target.value })} aria-label="Frames per second" />
+              </label>}
               {!moveLoops && candidates.length === 0 && (
                 <div className="pzs-loop">
                   <span className="small">Plays once, the whole clip.</span>
@@ -458,7 +504,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
                 </div>
               )}
               {report && report.score < 70 && <div className="issue warn small">Quality {report.score}: open Advanced settings to see what to fix.</div>}
-              <p className="dim small">Background, watermark and shadow are removed; edges are sharpened. Speed and timing can be changed later on the move's Adjust panel.</p>
+              <p className="dim small">Made from your video by Kinetome itself (no Claude, no tokens): background, watermark and shadow removed, edges sharpened. Frames and speed can be changed later on the move's Adjust panel.</p>
             </div>
           </div>
         )}

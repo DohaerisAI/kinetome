@@ -63,6 +63,33 @@ async function decodeAnimated(file: File): Promise<{ frames: ImageData[]; durati
   } finally { dec.close(); }
 }
 
+/** Grabs frames into `fps` time slots while the video plays; slots it misses stay empty. */
+function playCapture(video: HTMLVideoElement, fps: number, want: number): Promise<(ImageData | undefined)[]> {
+  const slots: (ImageData | undefined)[] = new Array(want);
+  type RVFC = (cb: (now: number, meta: { mediaTime: number }) => void) => number;
+  const rvfc = (video as unknown as { requestVideoFrameCallback?: RVFC }).requestVideoFrameCallback?.bind(video);
+  if (!rvfc) return Promise.resolve(slots);
+  return new Promise(resolve => {
+    let done = false, idle: ReturnType<typeof setTimeout>;
+    const finish = () => { if (done) return; done = true; clearTimeout(idle); video.pause(); video.onended = null; resolve(slots); };
+    const arm = () => { clearTimeout(idle); idle = setTimeout(finish, 2500); }; // stalled: fall back to seeking
+    const onFrame = (_now: number, meta: { mediaTime: number }) => {
+      if (done) return;
+      const i = Math.round(meta.mediaTime * fps);
+      if (i >= 0 && i < want && !slots[i]) slots[i] = grab(video, video.videoWidth, video.videoHeight, MAX_VIDEO);
+      if (i >= want - 1) return finish();
+      arm();
+      rvfc(onFrame);
+    };
+    video.onended = finish;
+    video.currentTime = 0;
+    video.playbackRate = 1; // 2x drops about half the frames (each grab takes ~15 ms), and those then need seeking
+    rvfc(onFrame);
+    arm();
+    video.play().catch(finish);
+  });
+}
+
 async function decodeVideo(file: File, fps: number, maxSeconds: number): Promise<{ frames: ImageData[]; durations: number[] }> {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
@@ -73,12 +100,17 @@ async function decodeVideo(file: File, fps: number, maxSeconds: number): Promise
       video.onerror = () => reject(new Error('This browser cannot decode that video (try MP4/H.264 or WebM in Chrome/Edge)'));
     });
     const dur = Math.min(video.duration || 0, maxSeconds);
-    const frames: ImageData[] = [];
-    const step = 1 / fps;
-    for (let t = 0; t < dur && frames.length < MAX_FRAMES; t += step) {
-      await new Promise<void>(resolve => { video.onseeked = () => resolve(); video.currentTime = Math.min(t, Math.max(0, video.duration - 0.001)); });
-      frames.push(grab(video, video.videoWidth, video.videoHeight, MAX_VIDEO));
+    const want = Math.min(MAX_FRAMES, Math.max(1, Math.floor(dur * fps)));
+    // Fast path: play the clip (muted) and grab each frame as it is presented. Seeking frame
+    // by frame costs a decode per frame and took about a minute for a 5 s clip.
+    const slots: (ImageData | undefined)[] = await playCapture(video, fps, want).catch(() => new Array(want));
+    // anything the playback skipped (busy tab, slow machine) is fetched by seeking
+    for (let i = 0; i < want; i++) {
+      if (slots[i]) continue;
+      await new Promise<void>(resolve => { video.onseeked = () => resolve(); video.currentTime = Math.min(i / fps, Math.max(0, video.duration - 0.001)); });
+      slots[i] = grab(video, video.videoWidth, video.videoHeight, MAX_VIDEO);
     }
+    const frames = slots as ImageData[];
     return { frames, durations: frames.map(() => 1000 / fps) };
   } finally { URL.revokeObjectURL(url); video.removeAttribute('src'); }
 }
