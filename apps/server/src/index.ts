@@ -5,6 +5,7 @@ import { ZodError } from 'zod';
 import * as store from './store.ts';
 import { characters } from './characters.ts';
 import { rigApi } from './rigAgent.ts';
+import { geminiApi } from './gemini.ts';
 import { ENGINES, exportZip, normalSheet, type Engine } from './export.ts';
 
 const app = new Hono().basePath('/api');
@@ -126,6 +127,7 @@ app.put('/projects/:p/assets/:a/edit', async c => {
 
 app.route('/', characters);
 app.route('/', rigApi);
+app.route('/', geminiApi);
 
 const port = Number(process.env.PORT ?? 4317);
 await store.seedIfEmpty();

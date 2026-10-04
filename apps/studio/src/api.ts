@@ -131,4 +131,27 @@ export const api = {
   queueMoves: (p: string, c: string, body: { moves: string[]; model: Model; rounds: number }) => call<unknown[]>(`/projects/${p}/characters/${c}/rig/queue`, json(body)),
   cancelJob: (p: string, id: string) => call<unknown[]>(`/projects/${p}/queue/${id}`, { method: 'DELETE' }),
   sheetUrl: (p: string, a: SpriteAsset) => `/api/projects/${p}/assets/${a.id}/sheet.png?v=${encodeURIComponent(a.updatedAt)}`,
+  // Gemini API connection (optional; the key stays on the server)
+  geminiSettings: () => call<GeminiSettings>('/settings/gemini'),
+  saveGeminiSettings: (body: { key?: string | null; imageModel?: string; videoModel?: string }) => call<GeminiSettings>('/settings/gemini', { ...json(body), method: 'PUT' }),
+  testGemini: () => call<{ ok: boolean; video: string[]; image: string[] }>('/settings/gemini/test', { method: 'POST' }),
+  geminiImage: (prompt: string, images: string[], aspectRatio = '1:1') => track('shaping', 'Gemini is drawing', () => call<{ mimeType: string; data: string; model: string }>('/gemini/image', json({ prompt, images, aspectRatio }))),
+  generateClip: (p: string, c: string, m: string, body: { prompt: string; negative?: string; image: string; pinEnd?: boolean; seconds?: number; aspectRatio?: '16:9' | '9:16'; model?: string }) =>
+    call<{ job: string; model: string; seconds: number }>(`/projects/${p}/characters/${c}/moves/${m}/clips/generate`, json(body)),
+  clipJob: (id: string) => call<{ status: 'running' | 'done' | 'failed'; error: string | null; clip: Clip | null; seconds: number }>(`/gemini/jobs/${id}`),
+  // source clips per move: kept so an animation can be re-cut without a new video
+  listClips: (p: string, c: string, m: string) => call<Clip[]>(`/projects/${p}/characters/${c}/moves/${m}/clips`),
+  uploadClip: (p: string, c: string, m: string, file: File) => {
+    const f = new FormData(); f.set('video', file, file.name);
+    return call<Clip>(`/projects/${p}/characters/${c}/moves/${m}/clips`, { method: 'POST', body: f });
+  },
+  deleteClip: (p: string, c: string, m: string, f: string) => call<void>(`/projects/${p}/characters/${c}/moves/${m}/clips/${f}`, { method: 'DELETE' }),
+  clipUrl: (p: string, c: string, m: string, f: string) => `/api/projects/${p}/characters/${c}/moves/${m}/clips/${f}`,
 };
+
+export interface Clip { file: string; source: string; createdAt: string; bytes: number }
+export interface GeminiSettings {
+  configured: boolean; source: 'settings' | 'env' | null; masked: string | null;
+  imageModel: string; videoModel: string;
+  videoModels: { id: string; label: string; usdPerSecond: number }[]; imageModels: string[];
+}

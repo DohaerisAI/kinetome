@@ -520,7 +520,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
                 </div>
               )}
 
-              {expectedFrames && !single && order.length !== expectedFrames && (
+              {expectedFrames && !single && src?.kind !== 'video' && order.length !== expectedFrames && (
                 <div className="issue warn">
                   Expected {expectedFrames} frames for "{initialAnim}", found {order.length}. {order.length > expectedFrames ? 'Delete the extra poses below' : 'Gemini dropped some; regenerate, or keep these if the motion still reads'}.
                 </div>

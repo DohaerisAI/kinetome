@@ -135,11 +135,15 @@ export function CharactersView({ projectId, style, assets, model, onUsage, onImp
         const fresh = latest.current.find(d => d.id === design.id) ?? design;
         const link = (pixelHeight: number) => {
           const cur = latest.current.find(d => d.id === design.id) ?? fresh;
-          if (cur.assetId !== asset.id || cur.pixelHeight !== pixelHeight) update({ ...cur, assetId: asset.id, pixelHeight });
+          // the move now has what was imported: its frame count and speed follow the animation
+          const anim = req.anim ? asset.animations.find(a => a.name === req.anim) : undefined;
+          const moves = anim ? cur.moves.map(m => (m.id === anim.name && (m.frames !== anim.frames.length || m.fps !== anim.fps) ? { ...m, frames: Math.min(24, anim.frames.length), fps: anim.fps, loop: anim.loop } : m)) : cur.moves;
+          if (cur.assetId !== asset.id || cur.pixelHeight !== pixelHeight || moves !== cur.moves) update({ ...cur, assetId: asset.id, pixelHeight, moves });
         };
         // The reference defines the real size: prompts must quote it, or Gemini gets told
         // "40px" while looking at a 100px reference.
-        if (req.anim === 'idle' || !fresh.assetId) {
+        // re-measure whenever the sprite changes: a new link carries its own size
+        if (req.anim === 'idle' || !fresh.assetId || fresh.assetId !== asset.id) {
           loadImage(api.sheetUrl(projectId, asset)).then(img => {
             const h = lintAsset(toPixels(img), asset, style).stats.contentHeight;
             link(h >= 12 && h <= 256 ? h : fresh.pixelHeight);

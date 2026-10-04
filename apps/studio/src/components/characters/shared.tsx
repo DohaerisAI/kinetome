@@ -7,6 +7,8 @@ import { Icon, type IconName } from '../../icons.tsx';
 export interface ImportRequest {
   assetId: string | null;
   anim: string | null;
+  /** Files to open directly (a stored or generated clip); otherwise a file picker opens. */
+  files?: File[];
   design: CharacterDesign;
   onDone: (asset: SpriteAsset) => void;
 }

@@ -24,6 +24,8 @@ import { useClaudeActivity } from './claudeActivity.ts';
 import { watchQueue } from './queue.ts';
 import { ProjectMenu } from './components/ProjectMenu.tsx';
 import { TrashDialog } from './components/TrashDialog.tsx';
+import { ConnectionsDialog } from './components/ConnectionsDialog.tsx';
+import { setGemini, useGemini } from './gemini.ts';
 import { ExportDialog } from './components/ExportDialog.tsx';
 import { EffectsDialog } from './components/EffectsDialog.tsx';
 import { CheckPanel, LightingPanel, VariantsPanel } from './components/SpritePanels.tsx';
@@ -85,6 +87,13 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeAction, setNoticeAction] = useState<{ label: string; run: () => void } | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [connOpen, setConnOpen] = useState(false);
+  const gemini = useGemini();
+  useEffect(() => {
+    const open = () => setConnOpen(true);
+    window.addEventListener('kinetome:connections', open);
+    return () => window.removeEventListener('kinetome:connections', open);
+  }, []);
   const [exportFor, setExportFor] = useState<string[] | null>(null);
   const [effectsOpen, setEffectsOpen] = useState(false);
   const [assets, setAssets] = useState<SpriteAsset[]>([]);
@@ -332,7 +341,8 @@ export function App() {
   const importForCharacter = (req: ImportRequest) => {
     pendingImport.current = req;
     setPixelizeTarget({ asset: req.assetId, anim: req.anim, design: req.design });
-    pixelInput.current?.click();
+    if (req.files?.length) setPixelizeFiles(req.files);
+    else pixelInput.current?.click();
   };
 
   const mergePixelized = async (a: SpriteAsset, png: Blob): Promise<boolean> => {
@@ -361,6 +371,7 @@ export function App() {
     { id: 'import', label: 'Import art…', group: 'Actions', icon: 'upload' as IconName, keywords: 'sprite sheet gif video image pixelize', run: () => fileInput.current?.click() },
     { id: 'new-project', label: 'New project…', group: 'Actions', icon: 'plus' as IconName, run: () => void newProject() },
     { id: 'effect', label: 'New effect (slash, dust, spark, leaves, magic)…', group: 'Actions', icon: 'sparkle' as IconName, keywords: 'vfx particles fx', run: () => setEffectsOpen(true) },
+    { id: 'connections', label: 'Gemini API key and models…', group: 'Actions', icon: 'gemini' as IconName, keywords: 'settings api key veo video connect', run: () => setConnOpen(true) },
     { id: 'trash', label: 'Open the trash', group: 'Actions', icon: 'trash' as IconName, keywords: 'restore deleted undo', run: () => setTrashOpen(true) },
     ...(pid ? [
       { id: 'rename-project', label: 'Rename this project…', group: 'Project', icon: 'pencil' as IconName, run: () => void renameProject() },
@@ -413,6 +424,10 @@ export function App() {
           </select>
           {sessionUsage.calls > 0 && <span className="pill-usage" title={`${sessionUsage.calls} Claude calls this session`}>{fmtTokens(sessionUsage.tokens)} tok</span>}
         </div>
+        <button className={gemini?.configured ? 'icon-btn conn-btn on' : 'icon-btn conn-btn'} onClick={() => setConnOpen(true)}
+          title={gemini?.configured ? `Gemini API connected (${gemini.masked})` : 'Connect a Gemini API key (optional)'} aria-label="Gemini API connection">
+          <Icon name="gemini" /><span className="conn-dot" aria-hidden />
+        </button>
         {pid && <button className="godot-btn" onClick={() => setExportFor([])} title="Export for Godot, Unity, Phaser, PixiJS, TexturePacker or Aseprite"><Icon name="download" /> <span>Export</span></button>}
         <button className="primary" onClick={() => fileInput.current?.click()} disabled={!pid} title="Sprite sheets, images, GIFs, videos"><Icon name="upload" /> Import…</button>
         <input
@@ -508,6 +523,7 @@ export function App() {
       {effectsOpen && pid && style && <EffectsDialog projectId={pid} style={style} extraColors={designs.flatMap(d => designPalette(d))} fail={fail} onClose={() => setEffectsOpen(false)}
         onCreated={a => { setAssets(list => [...list, a]); setSelectedId(a.id); setTab('library'); notify(`Added ${a.name} to the library`); }} />}
       {exportFor && pid && <ExportDialog projectId={pid} project={project} assets={assets} initial={exportFor} onClose={() => setExportFor(null)} onSync={project?.godot.path ? () => void syncGodot() : null} />}
+      {connOpen && <ConnectionsDialog onClose={() => setConnOpen(false)} onChange={setGemini} fail={fail} />}
       {trashOpen && <TrashDialog projectId={pid} projectName={id => projects.find(p => p.id === id)?.name ?? id} onClose={() => setTrashOpen(false)} onRestored={afterRestore} fail={fail} />}
       {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
     </div>

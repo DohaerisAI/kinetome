@@ -15,13 +15,13 @@ export const WORKSPACE = resolve(process.env.SPRITE_WORKSPACE ?? new URL('../../
 const SAMPLES = resolve(new URL('../../../samples', import.meta.url).pathname);
 
 const ID = /^[a-z0-9][a-z0-9-]*$/;
-function safeId(id: string): string {
+export function safeId(id: string): string {
   if (!ID.test(id)) throw new HttpError(400, `invalid id: ${id}`);
   return id;
 }
 
 export class HttpError extends Error {
-  constructor(readonly status: 400 | 404 | 409, message: string) { super(message); }
+  constructor(readonly status: 400 | 404 | 409 | 502, message: string) { super(message); }
 }
 
 const projectDir = (p: string) => join(WORKSPACE, safeId(p));
