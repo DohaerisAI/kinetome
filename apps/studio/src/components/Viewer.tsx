@@ -76,6 +76,29 @@ export function Viewer({ asset, img, animName, onAnim }: { asset: SpriteAsset | 
   }, [playing, anim, n, prefs.speed, mode]);
 
   const fit = asset ? Math.max(1, Math.floor(Math.min((size.w - 48) / asset.frameWidth, (size.h - 48) / asset.frameHeight))) : 1;
+
+  // Wheel / pinch zoom. A NON-passive native listener, so preventDefault keeps the browser from
+  // zooming the whole page (Ctrl+wheel and trackpad pinch). Deltas are summed: a trackpad sends
+  // many tiny steps, a mouse one big one.
+  const wheelAcc = useRef(0);
+  const wheelState = useRef({ asset, fit });
+  wheelState.current = { asset, fit };
+  useEffect(() => {
+    const c = canvas.current;
+    if (!c) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!wheelState.current.asset) return;
+      e.preventDefault();
+      const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+      wheelAcc.current += e.deltaY * unit * (e.ctrlKey ? 2.5 : 1);
+      if (Math.abs(wheelAcc.current) < 40) return;
+      const dir = wheelAcc.current < 0 ? 1 : -1;
+      wheelAcc.current = 0;
+      setZoom(v => Math.max(1, Math.min(32, (v || wheelState.current.fit) + dir)));
+    };
+    c.addEventListener('wheel', onWheel, { passive: false });
+    return () => c.removeEventListener('wheel', onWheel);
+  }, []);
   const z = zoom || fit;
 
   // draw
@@ -192,7 +215,8 @@ export function Viewer({ asset, img, animName, onAnim }: { asset: SpriteAsset | 
         {prefs.bg === 'custom' && <EyedropperButton onPick={c => setPref('custom', c)} title="Pick the background color from anywhere (e.g. your game's level)" />}
         <select className="compact" value={zoom} onChange={e => setZoom(Number(e.target.value))} aria-label="Zoom">
           <option value={0}>Fit · {fit}×</option>
-          {[1, 2, 3, 4, 6, 8, 12, 16, 24].map(v => <option key={v} value={v}>{v}×</option>)}
+          {/* wheel and +/- reach any step: list the current zoom too, or the menu would read "Fit" */}
+          {[...new Set([1, 2, 3, 4, 6, 8, 12, 16, 24, ...(zoom ? [zoom] : [])])].sort((a, b) => a - b).map(v => <option key={v} value={v}>{v}×</option>)}
         </select>
         <button className="icon-btn" onClick={() => setHelp(h => !h)} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><Icon name="keyboard" /></button>
       </div>
@@ -208,7 +232,7 @@ export function Viewer({ asset, img, animName, onAnim }: { asset: SpriteAsset | 
       )}
 
       <div className="stage" ref={wrap}>
-        <canvas ref={canvas} style={{ width: size.w, height: size.h }} onWheel={e => { if (!asset) return; setZoom(v => Math.max(1, Math.min(32, (v || fit) + (e.deltaY < 0 ? 1 : -1)))); }} />
+        <canvas ref={canvas} style={{ width: size.w, height: size.h }} />
         {!asset && <div className="stage-empty"><Icon name="film" size={28} /><span>Select a sprite, or drop images, GIFs or videos anywhere</span></div>}
         {help && (
           <div className="shortcuts" role="dialog" aria-label="Keyboard shortcuts" onClick={() => setHelp(false)}>
