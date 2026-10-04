@@ -369,8 +369,10 @@ button.small { font-size: 12px; padding: 3px 7px; }
 .move-name { flex: 1; font-weight: 500; }
 .move-add { margin-top: 6px; }
 .move-editor { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.move-params { display: grid; grid-template-columns: 90px 90px auto auto; gap: 14px; align-items: end; }
+.move-params { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; }
 .move-params .field { margin-bottom: 0; }
+.move-params .field > span { white-space: nowrap; }
+.move-params input[type=number] { width: 96px; }
 .poses { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .poses li { display: flex; gap: 8px; align-items: flex-start; }
 .pose-n { width: 24px; height: 24px; border-radius: 6px; background: var(--panel-3); display: grid; place-items: center; font: 600 11px var(--mono); color: var(--dim); flex: none; margin-top: 3px; }
@@ -945,3 +947,23 @@ button.danger { color: var(--err); }
 .pzs-progress li.now .pzs-dot { background: var(--accent-soft); color: var(--accent-2); animation: pzs-pulse 1.2s var(--ease) infinite; }
 @keyframes pzs-pulse { 50% { box-shadow: 0 0 0 5px rgba(139,108,255,.12); } }
 .alt-params { margin: 0 0 12px; }
+
+/* ---------- video trimmer ---------- */
+.trim { padding: 20px; display: grid; gap: 16px; overflow: auto; }
+.trim-top { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.trim-video { position: relative; flex: none; }
+.trim-video video { width: 420px; max-width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; background: #000; display: block; cursor: pointer; }
+.trim-play { position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.55); color: #fff; }
+.trim-info { flex: 1; min-width: 240px; display: grid; gap: 8px; align-content: start; }
+.trim-info p { margin: 0; line-height: 1.5; }
+.trim-info .chip.active { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.trim-strip { position: relative; height: 62px; border-radius: 8px; overflow: hidden; background: var(--panel-2); border: 1px solid var(--line-2); user-select: none; touch-action: none; }
+.trim-thumbs { position: absolute; inset: 4px 0; display: flex; }
+.trim-thumbs img { flex: 1; min-width: 0; height: 54px; object-fit: cover; }
+.trim-shade { position: absolute; top: 0; bottom: 0; background: rgba(9,9,15,.72); pointer-events: none; }
+.trim-win { position: absolute; top: 0; bottom: 0; border-top: 3px solid var(--accent); border-bottom: 3px solid var(--accent); cursor: grab; }
+.trim-win:active { cursor: grabbing; }
+.trim-handle { position: absolute; top: 0; bottom: 0; width: 14px; margin-left: -7px; cursor: ew-resize; background: var(--accent); border-radius: 4px; box-shadow: 0 0 0 2px rgba(0,0,0,.35); }
+.trim-handle::after { content: ''; position: absolute; left: 5px; top: 22px; bottom: 22px; width: 4px; border-left: 1px solid rgba(255,255,255,.7); border-right: 1px solid rgba(255,255,255,.7); }
+.trim-head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; pointer-events: none; box-shadow: 0 0 6px rgba(0,0,0,.6); }
+.trim-actions { justify-content: flex-end; }

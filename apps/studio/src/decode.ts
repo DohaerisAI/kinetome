@@ -21,6 +21,8 @@ export interface Decoded {
 const MAX_IMAGE = 1536;
 const MAX_VIDEO = 512;
 const MAX_FRAMES = 120;
+/** Longest stretch of video read at once: MAX_FRAMES at 24 fps. Longer clips are trimmed first. */
+export const MAX_VIDEO_SECONDS = 5;
 
 export const isVideo = (f: File) => f.type.startsWith('video/') || /\.(mp4|webm|mov|m4v)$/i.test(f.name);
 export const isPixelizable = (f: File) => isVideo(f) || /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(f.name) || f.type.startsWith('image/');
@@ -63,8 +65,19 @@ async function decodeAnimated(file: File): Promise<{ frames: ImageData[]; durati
   } finally { dec.close(); }
 }
 
-/** Grabs frames into `fps` time slots while the video plays; slots it misses stay empty. */
-function playCapture(video: HTMLVideoElement, fps: number, want: number): Promise<(ImageData | undefined)[]> {
+/** Length of a video file in seconds (metadata only, no decoding). */
+export async function videoDuration(file: File): Promise<number> {
+  const url = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  v.preload = 'metadata'; v.muted = true; v.src = url;
+  try {
+    await new Promise<void>((res, rej) => { v.onloadedmetadata = () => res(); v.onerror = () => rej(new Error('This browser cannot read that video (try MP4/H.264 or WebM)')); });
+    return Number.isFinite(v.duration) ? v.duration : 0;
+  } finally { URL.revokeObjectURL(url); v.removeAttribute('src'); }
+}
+
+/** Grabs frames into `fps` time slots while the video plays (from `start`); missed slots stay empty. */
+function playCapture(video: HTMLVideoElement, fps: number, want: number, start = 0): Promise<(ImageData | undefined)[]> {
   const slots: (ImageData | undefined)[] = new Array(want);
   type RVFC = (cb: (now: number, meta: { mediaTime: number }) => void) => number;
   const rvfc = (video as unknown as { requestVideoFrameCallback?: RVFC }).requestVideoFrameCallback?.bind(video);
@@ -75,14 +88,14 @@ function playCapture(video: HTMLVideoElement, fps: number, want: number): Promis
     const arm = () => { clearTimeout(idle); idle = setTimeout(finish, 2500); }; // stalled: fall back to seeking
     const onFrame = (_now: number, meta: { mediaTime: number }) => {
       if (done) return;
-      const i = Math.round(meta.mediaTime * fps);
+      const i = Math.round((meta.mediaTime - start) * fps);
       if (i >= 0 && i < want && !slots[i]) slots[i] = grab(video, video.videoWidth, video.videoHeight, MAX_VIDEO);
       if (i >= want - 1) return finish();
       arm();
       rvfc(onFrame);
     };
     video.onended = finish;
-    video.currentTime = 0;
+    video.currentTime = start;
     video.playbackRate = 1; // 2x drops about half the frames (each grab takes ~15 ms), and those then need seeking
     rvfc(onFrame);
     arm();
@@ -90,7 +103,7 @@ function playCapture(video: HTMLVideoElement, fps: number, want: number): Promis
   });
 }
 
-async function decodeVideo(file: File, fps: number, maxSeconds: number): Promise<{ frames: ImageData[]; durations: number[] }> {
+async function decodeVideo(file: File, fps: number, maxSeconds: number, start = 0, end = Infinity): Promise<{ frames: ImageData[]; durations: number[] }> {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
   video.muted = true; video.playsInline = true; video.preload = 'auto'; video.src = url;
@@ -99,15 +112,17 @@ async function decodeVideo(file: File, fps: number, maxSeconds: number): Promise
       video.onloadeddata = () => resolve();
       video.onerror = () => reject(new Error('This browser cannot decode that video (try MP4/H.264 or WebM in Chrome/Edge)'));
     });
-    const dur = Math.min(video.duration || 0, maxSeconds);
-    const want = Math.min(MAX_FRAMES, Math.max(1, Math.floor(dur * fps)));
+    const from = Math.max(0, Math.min(start, (video.duration || 0) - 0.05));
+    const dur = Math.max(0.05, Math.min((video.duration || 0), end) - from);
+    const want0 = Math.min(MAX_FRAMES, Math.max(1, Math.floor(Math.min(dur, maxSeconds) * fps)));
+    const want = want0;
     // Fast path: play the clip (muted) and grab each frame as it is presented. Seeking frame
     // by frame costs a decode per frame and took about a minute for a 5 s clip.
-    const slots: (ImageData | undefined)[] = await playCapture(video, fps, want).catch(() => new Array(want));
+    const slots: (ImageData | undefined)[] = await playCapture(video, fps, want, from).catch(() => new Array(want));
     // anything the playback skipped (busy tab, slow machine) is fetched by seeking
     for (let i = 0; i < want; i++) {
       if (slots[i]) continue;
-      await new Promise<void>(resolve => { video.onseeked = () => resolve(); video.currentTime = Math.min(i / fps, Math.max(0, video.duration - 0.001)); });
+      await new Promise<void>(resolve => { video.onseeked = () => resolve(); video.currentTime = Math.min(from + i / fps, Math.max(0, video.duration - 0.001)); });
       slots[i] = grab(video, video.videoWidth, video.videoHeight, MAX_VIDEO);
     }
     const frames = slots as ImageData[];
@@ -115,7 +130,7 @@ async function decodeVideo(file: File, fps: number, maxSeconds: number): Promise
   } finally { URL.revokeObjectURL(url); video.removeAttribute('src'); }
 }
 
-export async function decodeFiles(files: File[], video = { fps: 24, maxSeconds: 6 }): Promise<Decoded> {
+export async function decodeFiles(files: File[], video: { fps?: number; maxSeconds?: number; start?: number; end?: number } = {}): Promise<Decoded> {
   const usable = files.filter(isPixelizable);
   if (!usable.length) throw new Error('No image or video files');
 
@@ -130,7 +145,7 @@ export async function decodeFiles(files: File[], video = { fps: 24, maxSeconds: 
   const file = usable[0];
   const name = file.name.replace(/\.\w+$/, '');
   if (isVideo(file)) {
-    const v = await decodeVideo(file, video.fps, video.maxSeconds);
+    const v = await decodeVideo(file, video.fps ?? 24, video.maxSeconds ?? MAX_VIDEO_SECONDS, video.start ?? 0, video.end ?? Infinity);
     if (!v.frames.length) throw new Error('No frames decoded from video');
     return { kind: 'video', name, ...v, width: v.frames[0].width, height: v.frames[0].height };
   }

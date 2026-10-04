@@ -67,7 +67,7 @@ self.onmessage = (e: MessageEvent<WorkerIn>) => {
         ...effective(m.opts), outline: null, palette: 'fixed', fixedPalette: [], cleanup: false, crisp: false,
         targetHeight: Math.min(m.opts.targetHeight, 48),
       }).frames;
-      post({ type: 'loops', id: m.id, loops: findLoops(clean, m.range?.[0] ?? 4, 5, m.range?.[1] ?? Infinity) });
+      post({ type: 'loops', id: m.id, loops: findLoops(clean, m.range?.[0] ?? 4, 10, m.range?.[1] ?? Infinity) });
     }
   } catch (err) {
     post({ type: 'error', id: m.id, message: err instanceof Error ? err.message : String(err) });

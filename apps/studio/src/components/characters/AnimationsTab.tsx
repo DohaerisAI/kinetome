@@ -167,7 +167,7 @@ function MoveEditor(props: EditorProps) {
               {WEIGHTS.map(w => <button key={w} role="radio" aria-checked={m.weight === w} className={m.weight === w ? 'active' : ''} onClick={() => setMove({ weight: w })}>{w}</button>)}
             </div>
           </Field>
-          <Field label="Playback" hint="loops, or plays once"><label className="toggle"><input type="checkbox" checked={m.loop} onChange={e => setMove({ loop: e.target.checked })} /> <Icon name="loop" /> loop</label></Field>
+          <Field label="Playback"><label className="toggle" title="Loops (idle, run), or plays once (attack, hurt)"><input type="checkbox" checked={m.loop} onChange={e => setMove({ loop: e.target.checked })} /> <Icon name="loop" /> loop</label></Field>
         </div>
       </Step>
 
@@ -178,7 +178,7 @@ function MoveEditor(props: EditorProps) {
         <summary><Icon name="code" /> <strong>Other routes</strong> <span className="dim small">Claude animates with code on {d.name}'s art, or import a finished sprite sheet</span></summary>
 
       <div className="move-params alt-params">
-        <Field label="Frames" hint="for Claude and sprite sheets; video picks its own"><input type="number" min={1} max={24} value={m.frames} onChange={e => setFrames(+e.target.value)} /></Field>
+        <Field label="Frames" hint="Claude and sheets only; video picks its own"><input type="number" min={1} max={24} value={m.frames} onChange={e => setFrames(+e.target.value)} /></Field>
         <Field label="FPS"><input type="number" min={1} max={60} value={m.fps} onChange={e => setMove({ fps: Math.max(1, Math.min(60, +e.target.value || 1)) })} /></Field>
       </div>
 

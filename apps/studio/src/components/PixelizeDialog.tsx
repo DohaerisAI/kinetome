@@ -8,7 +8,8 @@ import {
   type LoopCandidate, type MotionPreset, type PixelizeOptions, type PixelizeResult, type QualityReport,
 } from '@kinetome/pixel';
 import { api, type AssetDraft } from '../api.ts';
-import { decodeFiles, isVideo, type Decoded } from '../decode.ts';
+import { decodeFiles, isVideo, MAX_VIDEO_SECONDS, videoDuration, type Decoded } from '../decode.ts';
+import { VideoTrimmer } from './VideoTrimmer.tsx';
 import { mergeIntoAsset } from '../merge.ts';
 import { canvasToPng, loadImage, toPixels } from '../pixels.ts';
 import type { Prepared, WorkerIn, WorkerOut } from '../pixelize.worker.ts';
@@ -54,10 +55,13 @@ export const BRIEF_KEY = (pid: string) => `sprite.brief.${pid}`;
  * One decode per set of files. React runs effects twice in development, and two decodes of
  * the same video at once (each playing and seeking) took three times as long as one.
  */
-const decoding = new WeakMap<File[], Promise<Decoded>>();
-const decodeOnce = (files: File[]) => {
-  let p = decoding.get(files);
-  if (!p) { p = decodeFiles(files); decoding.set(files, p); }
+const decoding = new WeakMap<File[], Map<string, Promise<Decoded>>>();
+const decodeOnce = (files: File[], trim: { start: number; end: number } | null) => {
+  const byTrim = decoding.get(files) ?? new Map<string, Promise<Decoded>>();
+  decoding.set(files, byTrim);
+  const key = trim ? `${trim.start.toFixed(3)}-${trim.end.toFixed(3)}` : 'all';
+  let p = byTrim.get(key);
+  if (!p) { p = decodeFiles(files, trim ?? {}); byTrim.set(key, p); }
   return p;
 };
 
@@ -150,11 +154,30 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
     return () => w.terminate();
   }, [onError]);
 
-  // ---------- decode ----------
+  // ---------- trim (videos longer than Kinetome reads at once start with picking the part) ----------
+  const videoFile = files.length === 1 && isVideo(files[0]) ? files[0] : null;
+  const [trim, setTrim] = useState<{ start: number; end: number } | null>(null);
+  const [trimming, setTrimming] = useState(false);
+  const [probed, setProbed] = useState(!videoFile);
   useEffect(() => {
     let live = true;
+    if (videoFile) videoDuration(videoFile).then(d => { if (!live) return; if (d > MAX_VIDEO_SECONDS + 0.05) setTrimming(true); setProbed(true); }, () => live && setProbed(true));
+    return () => { live = false; };
+  }, [videoFile]);
+  const useTrim = (t: { start: number; end: number }) => {
+    setTrim(t); setTrimming(false);
+    // start over on the new part
+    setSrc(null); setPrepared(null); setResults(null); setQuality(null); setLoops(null);
+    setCandidates([]); setCandidate(0); setCut(null); setCount(0);
+    autoLoop.current = 'pending';
+  };
+
+  // ---------- decode ----------
+  useEffect(() => {
+    if (!probed || trimming) return;
+    let live = true;
     setLoading(true);
-    decodeOnce(files).then(d => {
+    decodeOnce(files, trim).then(d => {
       if (!live) return;
       setSrc(d);
       setRange([0, d.frames.length]);
@@ -174,7 +197,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
       worker.current?.postMessage({ type: 'load', frames } satisfies WorkerIn);
     }, e => live && onError(e)).finally(() => live && setLoading(false));
     return () => { live = false; };
-  }, [files, onError, projectId]);
+  }, [files, onError, projectId, probed, trimming, trim]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- prepare (split sheets; re-run when backdrop settings change) ----------
   useEffect(() => {
@@ -350,9 +373,19 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
   useEffect(() => {
     if (autoLoop.current !== 'waiting' || !loops) return;
     autoLoop.current = 'done';
-    setCandidates(loops);
+    // Runs and walks in profile: half a stride (legs swapped) also scores as a loop, but the arms
+    // and props jump at the seam. A loop about twice as long with an acceptable seam is the real
+    // stride, so it goes first.
+    const ordered = [...loops];
+    if (['run', 'walk', 'dash'].includes(moveId) && ordered.length) {
+      const L = ordered[0].end - ordered[0].start;
+      const full = ordered.findIndex(c => { const n = c.end - c.start; return n >= L * 1.7 && n <= L * 2.3 && c.score <= 0.8; });
+      if (full > 0) ordered.unshift(...ordered.splice(full, 1));
+    }
+    const shown = ordered.slice(0, 5);
+    setCandidates(shown);
     setCandidate(0);
-    if (loops.length) applyLoop(loops[0]);
+    if (shown.length) applyLoop(shown[0]);
     else setOrder(o => [...o]); // no loop: convert the whole clip (the run waited for the search)
   }, [loops]); // eslint-disable-line react-hooks/exhaustive-deps
   const nextCandidate = () => {
@@ -424,7 +457,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
 
   const thumbs = prepared?.thumbs ?? [];
   const stripFrames: (PixelImage | undefined)[] = chosen && chosen.frames.length === order.length ? chosen.frames : order.map(i => thumbs[i]);
-  const importLabel = busy ? 'Saving…'
+  const importLabel = trimming ? 'Pick the part first' : busy ? 'Saving…'
     : target ? `Add ${motionResult ? 1 : segments.length} animation${!motionResult && segments.length > 1 ? 's' : ''} to ${target.asset.name}`
     : `Import${chosen ? ` (${(motionResult?.frames ?? chosen.frames).length} frames, ${motionResult ? 1 : segments.length} anim${!motionResult && segments.length > 1 ? 's' : ''})` : ''}`;
 
@@ -441,8 +474,9 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
           {running && <span className="dim small">working…</span>}
           {report && <span className={`badge ${report.score >= 90 ? 'ok' : report.score >= 70 ? 'warn' : 'err'}`} title="Quality score">quality {report.score}</span>}
         </div>
-        {loading && <p className="pad">{files.some(isVideo) ? 'Reading the video (a few seconds)…' : 'Decoding…'}</p>}
-        {!loading && src && simple && (
+        {trimming && videoFile && <VideoTrimmer file={videoFile} move={initialAnim} initial={trim} onConfirm={useTrim} />}
+        {!trimming && loading && <p className="pad">{files.some(isVideo) ? 'Reading the video (a few seconds)…' : 'Decoding…'}</p>}
+        {!trimming && !loading && src && simple && (
           <div className="pz-simple">
             <div className="pzs-preview">
               {chosen && !running && autoLoop.current !== 'waiting' ? <AnimPreview key={`${previewFps}-${order.join(',')}`} frames={segFrames(chosen)} fps={previewFps} width={340} height={300} playing />
@@ -508,7 +542,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
             </div>
           </div>
         )}
-        {!loading && src && !simple && (
+        {!trimming && !loading && src && !simple && (
           <div className="pz-body">
             {/* ---------- left: source + destination ---------- */}
             <section className="pz-col">
@@ -754,7 +788,8 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
           </div>
         )}
         <div className="modal-foot">
-          {src?.kind === 'video' && <button className="ghost small pz-mode" onClick={() => setSimple(x => !x)}><Icon name={simple ? 'grid' : 'expand'} /> {simple ? 'Advanced settings' : 'Simple view'}</button>}
+          {src?.kind === 'video' && !trimming && <button className="ghost small pz-mode" onClick={() => setSimple(x => !x)}><Icon name={simple ? 'grid' : 'expand'} /> {simple ? 'Advanced settings' : 'Simple view'}</button>}
+          {videoFile && !trimming && probed && <button className="ghost small" onClick={() => setTrimming(true)}><Icon name="scissors" /> {trim ? 'Change the part' : 'Trim the video'}</button>}
           <button onClick={onCancel}>Cancel</button>
           <button className="primary" disabled={!chosen || busy || running} onClick={doImport}>{importLabel}</button>
         </div>
