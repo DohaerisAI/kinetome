@@ -147,7 +147,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, input:focus, 
     radial-gradient(900px 420px at 100% -8%, rgba(53,208,255,.06), transparent 60%),
     var(--bg);
 }
-.topbar { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 56px; flex: none; border-bottom: 1px solid var(--line); background: rgba(10,10,16,.72); backdrop-filter: blur(14px) saturate(1.3); position: relative; z-index: 20; }
+.topbar { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 56px; flex: none; overflow: hidden; border-bottom: 1px solid var(--line); background: rgba(10,10,16,.72); backdrop-filter: blur(14px) saturate(1.3); position: relative; z-index: 20; }
 .brand { display: flex; align-items: center; gap: 9px; background: none; border: 0; box-shadow: none; padding: 4px 6px 4px 2px; min-height: 0; margin-right: 2px; }
 .brand:hover:not(:disabled) { background: none; }
 .brand-mark { width: 26px; height: 26px; background: url(/favicon.svg) center / contain no-repeat; image-rendering: pixelated; flex: none; filter: drop-shadow(0 4px 10px rgba(139,108,255,.35)); }
@@ -830,10 +830,13 @@ a.button.disabled { opacity: .4; pointer-events: none; }
 .tag-edit .chip { display: inline-flex; align-items: center; gap: 3px; padding-right: 4px; min-height: 24px; }
 .tag-edit input { flex: 1; min-width: 90px; padding: 3px 8px; }
 
-@media (max-width: 1580px) { .search-btn { min-width: 0; padding: 4px 9px; } .search-btn span, .search-btn kbd { display: none; } }
-@media (max-width: 1440px) { .topbar .godot-btn span { display: none; } }
-@media (max-width: 1500px) { .tab:not(.active) span { display: none; } .tab:not(.active) { padding: 4px 10px; } }
-@media (max-width: 1240px) { .claude-pill .pill-label { display: none; } }
+/* top bar density steps (set by App while the bar overflows) */
+.topbar:is(.d1, .d2, .d3, .d4) .search-btn { min-width: 0; padding: 4px 9px; }
+.topbar:is(.d1, .d2, .d3, .d4) .search-btn :is(span, kbd) { display: none; }
+.topbar:is(.d2, .d3, .d4) .tab:not(.active) span { display: none; }
+.topbar:is(.d2, .d3, .d4) .tab:not(.active) { padding: 4px 10px; }
+.topbar:is(.d3, .d4) .godot-btn span { display: none; }
+.topbar.d4 .claude-pill .pill-label, .topbar.d4 .brand-word { display: none; }
 @media (max-width: 1100px) { .pipeline { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hero { grid-template-columns: 1fr; } }
 
 @media (max-width: 1100px) {
@@ -904,3 +907,30 @@ button.danger { color: var(--err); }
 .alt-routes > summary::-webkit-details-marker { display: none; }
 .alt-routes[open] > summary { color: var(--text); border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .alt-routes > .card { margin-bottom: 12px; }
+.pt-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 18px 0 8px; }
+.pt-head h3 { margin: 0 !important; }
+.pt-head .ghost.small { min-height: 0; padding: 2px 8px; font-size: 12px; }
+
+/* ---------- Pixelize: simple view (video) ---------- */
+.pz-simple { display: flex; gap: 24px; padding: 20px; align-items: flex-start; overflow: auto; }
+.pzs-preview { display: grid; gap: 8px; justify-items: center; flex: none; }
+.pzs-controls { flex: 1; min-width: 260px; display: grid; gap: 14px; align-content: start; }
+.pzs-controls input[type=range] { width: 100%; accent-color: var(--accent); }
+.pzs-dest { display: grid; gap: 6px; padding: 12px; border-radius: var(--r); background: var(--panel-2); border: 1px solid var(--line); }
+.pzs-anim { font: 600 15px var(--mono); }
+.pzs-loop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pzs-controls p { margin: 0; line-height: 1.5; }
+.modal-foot .pz-mode { margin-right: auto; }
+@media (max-width: 760px) { .pz-simple { flex-direction: column; } }
+
+/* ---------- Effects page ---------- */
+.effects-page { flex: 1; overflow: auto; padding: 24px clamp(16px, 3vw, 40px) 48px; display: grid; gap: 16px; align-content: start; max-width: 1200px; margin: 0 auto; width: 100%; }
+.fx-card .fx-body { padding: 0; }
+.fx-card .modal-foot { padding: 12px 0 0; border-top: 1px solid var(--line); margin-top: 12px; }
+.fx-video { display: grid; gap: 12px; }
+.fx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.fx-tile { display: grid; gap: 4px; justify-items: center; padding: 10px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--panel-2); cursor: pointer; transition: border-color .15s var(--ease); }
+.fx-tile:hover { border-color: var(--line-3); }
+.fx-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fx-tile strong { font-size: 13px; }
+@media (max-width: 900px) { .fx-body { grid-template-columns: 1fr; } }

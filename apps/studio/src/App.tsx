@@ -18,6 +18,7 @@ import { useImage } from './pixels.ts';
 import { Home } from './components/Home.tsx';
 import { Playtest } from './components/Playtest.tsx';
 import { TilesView } from './components/TilesView.tsx';
+import { EffectsView } from './components/EffectsView.tsx';
 import { CommandPalette, type Command } from './components/CommandPalette.tsx';
 import { Orb } from './components/Orb.tsx';
 import { useClaudeActivity } from './claudeActivity.ts';
@@ -31,12 +32,13 @@ import { EffectsDialog } from './components/EffectsDialog.tsx';
 import { CheckPanel, LightingPanel, VariantsPanel } from './components/SpritePanels.tsx';
 import { pop, slideTo, viewIn } from './motion.ts';
 
-type Tab = 'home' | 'library' | 'editor' | 'characters' | 'playtest' | 'tiles' | 'lineup' | 'style';
+type Tab = 'home' | 'library' | 'editor' | 'characters' | 'effects' | 'playtest' | 'tiles' | 'lineup' | 'style';
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: 'home', label: 'Home', icon: 'home' },
   { id: 'library', label: 'Library', icon: 'layers' },
   { id: 'editor', label: 'Editor', icon: 'pencil' },
   { id: 'characters', label: 'Characters', icon: 'users' },
+  { id: 'effects', label: 'Effects', icon: 'sparkle' },
   { id: 'playtest', label: 'Playtest', icon: 'gamepad' },
   { id: 'tiles', label: 'Tiles', icon: 'tiles' },
   { id: 'lineup', label: 'Lineup', icon: 'grid' },
@@ -103,12 +105,28 @@ export function App() {
   const [palette, setPalette] = useState(false);
   const activity = useClaudeActivity();
   const navRef = useRef<HTMLElement>(null);
+  // Top bar density: labels collapse one step at a time only while the bar actually overflows,
+  // so it fits any width (and any number of buttons) without fixed breakpoints.
+  const barRef = useRef<HTMLElement>(null);
+  const [dense, setDense] = useState(0);
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    let w = bar.clientWidth;
+    const ro = new ResizeObserver(() => { if (bar.clientWidth !== w) { w = bar.clientWidth; setDense(0); } });
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (bar && dense < 4 && bar.scrollWidth > bar.clientWidth + 1) setDense(d => d + 1);
+  });
   const indicator = useRef<HTMLSpanElement>(null);
   const toastRef = useRef<HTMLDivElement>(null);
   const firstSlide = useRef(true);
   const [importFiles, setImportFiles] = useState<File[] | null>(null);
   const [pixelizeFiles, setPixelizeFiles] = useState<File[] | null>(null);
-  const [pixelizeTarget, setPixelizeTarget] = useState<{ asset: string | null; anim: string | null; design: CharacterDesign | null }>({ asset: null, anim: null, design: null });
+  const [pixelizeTarget, setPixelizeTarget] = useState<{ asset: string | null; anim: string | null; design: CharacterDesign | null; kind?: AssetDraft['kind'] }>({ asset: null, anim: null, design: null });
   const pendingImport = useRef<ImportRequest | null>(null);
   const [model, setModel] = useState<Model>(readModel);
   const [claude, setClaude] = useState<{ available: boolean; version: string | null; error?: string } | null>(null);
@@ -402,7 +420,7 @@ export function App() {
       onDragLeave={e => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={onDrop}
     >
-      <header className="topbar">
+      <header className={`topbar d${dense}`} ref={barRef}>
         <button className="brand" onClick={() => setTab('home')} aria-label="Kinetome home"><span className="brand-mark" aria-hidden /><span className="brand-word">Kinetome</span></button>
         <ProjectMenu projects={projects} current={project} onSwitch={setPid} onNew={() => void newProject()}
           onRename={() => void renameProject()} onDuplicate={() => void duplicateProject()} onDelete={() => void deleteProject()} onTrash={() => setTrashOpen(true)} />
@@ -475,6 +493,12 @@ export function App() {
         </main>
       )}
       {ready && pid && style && tab === 'playtest' && <Playtest projectId={pid} assets={assets} style={style} designs={designs} active={tab === 'playtest'} />}
+      {ready && pid && style && tab === 'effects' && (
+        <EffectsView projectId={pid} style={style} assets={assets} extraColors={designs.flatMap(d => designPalette(d))} fail={fail}
+          onCreated={a => { setAssets(list => [...list, a]); notify(`${a.name} added to your effects`); }}
+          onOpen={id => { setSelectedId(id); setTab('library'); }}
+          onImportVideo={() => { pendingImport.current = null; setPixelizeTarget({ asset: null, anim: 'effect', design: null, kind: 'fx' }); pixelInput.current?.click(); }} />
+      )}
       {ready && pid && style && tab === 'tiles' && (
         <TilesView projectId={pid} assets={assets} style={style} fail={fail} notify={notify} onEdit={editAsset}
           onCreated={a => setAssets(list => [...list, a])} />
@@ -516,7 +540,7 @@ export function App() {
       )}
       {pixelizeFiles && style && (
         <PixelizeDialog files={pixelizeFiles} style={style} projectId={pid!} assets={assets}
-          initialTarget={pixelizeTarget.asset} initialAnim={pixelizeTarget.anim} design={pixelizeTarget.design}
+          initialTarget={pixelizeTarget.asset} initialAnim={pixelizeTarget.anim} design={pixelizeTarget.design} initialKind={pixelizeTarget.kind}
           onCancel={() => { pendingImport.current = null; setPixelizeFiles(null); }} onCreate={importPixelized} onMerge={mergePixelized} onError={fail} />
       )}
       {dragging && <div className="dropveil"><div className="dropveil-card"><Icon name="upload" size={28} /><strong>Drop to import</strong><span className="dim">Sprite sheets, images, GIFs or videos</span></div></div>}

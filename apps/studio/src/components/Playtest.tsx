@@ -20,12 +20,23 @@ interface Settings {
 }
 
 const key = (projectId: string, asset: string) => `kinetome.playtest.${projectId}.${asset}`;
-function loadSettings(projectId: string, asset: SpriteAsset | null, unit: number): Settings {
-  const base: Settings = { res: 0, crt: false, boxes: true, walk: Math.round(unit * 1.6), runMul: 1.8, jump: Math.round(unit * 1.4), gravity: 900, effect: 'auto', dummy: null, map: {} };
+/** Speeds and jump scale with the character's own height (feet line ~ its pixel height), not the project's. */
+const heightOf = (asset: SpriteAsset | null, fallback: number) => (asset ? Math.max(12, Math.round(asset.pivot.y * 0.9)) : fallback);
+
+function defaults(asset: SpriteAsset | null, unit: number): Settings {
+  const h = heightOf(asset, unit);
+  const base: Settings = { res: 0, crt: false, boxes: true, walk: Math.round(h * 1.6), runMul: 1.8, jump: Math.round(h * 1.4), gravity: 900, effect: 'auto', dummy: null, map: {} };
   if (!asset) return base;
   const names = asset.animations.map(a => a.name);
-  const guess = (s: State) => names.find(n => GUESS[s].test(n) && !(s === 'attack' && GUESS.hurt.test(n)));
-  base.map = Object.fromEntries(STATES.map(s => [s, guess(s)]).filter(([, v]) => v)) as Settings['map'];
+  const guess = (st: State) => names.find(n => GUESS[st].test(n) && !(st === 'attack' && GUESS.hurt.test(n)));
+  base.map = Object.fromEntries(STATES.map(st => [st, guess(st)]).filter(([, v]) => v)) as Settings['map'];
+  return base;
+}
+
+function loadSettings(projectId: string, asset: SpriteAsset | null, unit: number): Settings {
+  const base = defaults(asset, unit);
+  if (!asset) return base;
+  const names = asset.animations.map(a => a.name);
   try {
     const saved = JSON.parse(localStorage.getItem(key(projectId, asset.id)) ?? '{}') as Partial<Settings>;
     // saved choices win, but only for animations that still exist; new animations get guessed
@@ -208,7 +219,9 @@ export function Playtest({ projectId, assets, style, designs, active }: { projec
       const atk = animOf('attack');
       const attacking = a.state === 'attack' && a.t < atk.frames.length / atk.fps;
       if (attackPress && !attacking && s.map.attack) { a.state = 'attack'; a.t = 0; a.lastFrame = -1; if (s.effect !== 'none' && s.effect !== 'auto') spawn(s.effect, a.x + a.facing * style.unitHeight * 0.5, a.y - style.unitHeight * 0.55, a.facing); }
-      const speed = s.walk * (run ? s.runMul : 1);
+      // a character with a run but no walk runs whenever it moves
+      const fast = run || (!s.map.walk && !!s.map.run);
+      const speed = s.walk * (fast ? s.runMul : 1);
       const dir = (right ? 1 : 0) - (left ? 1 : 0);
       if (dir) a.facing = dir > 0 ? 1 : -1;
       a.vx = attacking && a.grounded ? 0 : dir * speed;
@@ -222,7 +235,7 @@ export function Playtest({ projectId, assets, style, designs, active }: { projec
       }
       const next: State = a.state === 'attack' && a.t < atk.frames.length / atk.fps ? 'attack'
         : !a.grounded ? (a.vy < 0 ? 'jump' : 'fall')
-          : dir ? (run ? 'run' : 'walk') : 'idle';
+          : dir ? (fast ? 'run' : 'walk') : 'idle';
       if (next !== a.state) { a.state = next; a.t = 0; a.lastFrame = -1; } else a.t += dt;
       for (const sp of spawns.current) sp.t += dt;
       spawns.current = spawns.current.filter(sp => sp.t < sp.anim.frames.length / sp.anim.fps);
@@ -341,13 +354,13 @@ export function Playtest({ projectId, assets, style, designs, active }: { projec
           {STATES.map(st => (
             <label key={st} className="pt-map-row"><span>{st}</span>
               <select className="compact" value={s.map[st] ?? ''} onChange={e => set({ map: { ...s.map, [st]: e.target.value || undefined } })}>
-                <option value="">{st === 'run' ? '(walk, faster)' : st === 'fall' ? '(jump)' : st === 'idle' ? '(first)' : '—'}</option>
+                <option value="">{st === 'run' ? '(walk, faster)' : st === 'walk' && s.map.run ? '(none: moving runs)' : st === 'fall' ? '(jump)' : st === 'idle' ? '(first)' : '—'}</option>
                 {hero?.animations.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
               </select>
             </label>
           ))}
         </div>
-        <h3>Feel</h3>
+        <div className="pt-head"><h3>Feel</h3><button className="ghost small" onClick={() => { const d = defaults(hero, style.unitHeight); set({ walk: d.walk, runMul: d.runMul, jump: d.jump, gravity: d.gravity, map: d.map }); }} title="Speeds sized to this character and animations matched by name">Reset to defaults</button></div>
         <label className="pt-slider"><span>Walk</span><input type="range" min={10} max={300} value={s.walk} onChange={e => set({ walk: +e.target.value })} /><span className="mono">{s.walk} px/s</span></label>
         <label className="pt-slider"><span>Run ×</span><input type="range" min={1} max={4} step={0.1} value={s.runMul} onChange={e => set({ runMul: +e.target.value })} /><span className="mono">{s.runMul.toFixed(1)}</span></label>
         <label className="pt-slider"><span>Jump</span><input type="range" min={8} max={240} value={s.jump} onChange={e => set({ jump: +e.target.value })} /><span className="mono">{s.jump} px</span></label>

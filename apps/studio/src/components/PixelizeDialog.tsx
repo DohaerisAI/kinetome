@@ -12,6 +12,7 @@ import { decodeFiles, type Decoded } from '../decode.ts';
 import { mergeIntoAsset } from '../merge.ts';
 import { canvasToPng, loadImage, toPixels } from '../pixels.ts';
 import type { Prepared, WorkerIn, WorkerOut } from '../pixelize.worker.ts';
+import { Icon } from '../icons.tsx';
 import { AnimPreview } from './AnimPreview.tsx';
 import { PixelThumb } from './PixelThumb.tsx';
 
@@ -37,6 +38,8 @@ interface Props {
   initialAnim?: string | null;
   /** Importing for a character design: lock to its palette, height and name. */
   design?: CharacterDesign | null;
+  /** What a new sprite will be (effects anchor at their centre, not the feet). */
+  initialKind?: AssetDraft['kind'];
   onCancel: () => void;
   onCreate: (draft: AssetDraft, png: Blob) => Promise<unknown>;
   onMerge: (asset: SpriteAsset, png: Blob) => Promise<boolean>;
@@ -61,7 +64,7 @@ const presetFor = (name: string) => PLATFORMER_MOVES.find(m => m.id === name.toL
  * Any image, AI sprite sheet, GIF, video or frame sequence -> clean on-style animations,
  * as a new asset or added to an existing character.
  */
-export function PixelizeDialog({ files, style, projectId, assets, initialTarget, initialAnim, design, onCancel, onCreate, onMerge, onError }: Props) {
+export function PixelizeDialog({ files, style, projectId, assets, initialTarget, initialAnim, design, onCancel, onCreate, onMerge, onError, initialKind}: Props) {
   const [src, setSrc] = useState<Decoded | null>(null);
   const [loading, setLoading] = useState(true);
   const [split, setSplit] = useState(true);
@@ -72,6 +75,11 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
   const [range, setRange] = useState<[number, number]>([0, 0]);
   const [count, setCount] = useState(0);
   const [loops, setLoops] = useState<LoopCandidate[] | null>(null);
+  // Video opens in a simple view: the loop is found and applied automatically, three controls.
+  const [simple, setSimple] = useState(false);
+  const autoLoop = useRef<'off' | 'pending' | 'waiting' | 'done'>('off');
+  const [candidates, setCandidates] = useState<LoopCandidate[]>([]);
+  const [candidate, setCandidate] = useState(0);
   const [opts, setOpts] = useState<PixelizeOptions>({
     ...DEFAULT_PIXELIZE, bible: style.palette, targetHeight: style.unitHeight,
     outline: style.outline.mode === 'full' ? style.outline.color : null,
@@ -139,7 +147,9 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
       setRange([0, d.frames.length]);
       // video is smooth footage, never pixel art (compression blocks fool grid detection): resample
       // it, hold the torso still (legs swing), finish with crisp edges, keep its own colours
-      if (d.kind === 'video') setOpts(o => ({ ...o, mode: 'illustration', anchor: 'body', crisp: true, isolate: true, palette: o.palette === 'auto-bible' ? 'auto' : o.palette, colors: Math.max(o.colors, 24) }));
+      if (d.kind === 'video') { setSimple(true); autoLoop.current = 'pending'; }
+      if (initialKind) { setKind(initialKind); if (initialKind === 'fx') setOpts(o => ({ ...o, anchor: 'center' })); }
+      if (d.kind === 'video') setOpts(o => ({ ...o, mode: 'illustration', anchor: initialKind === 'fx' ? 'center' : 'body', crisp: true, isolate: true, palette: o.palette === 'auto-bible' ? 'auto' : o.palette, colors: Math.max(o.colors, 24) }));
       setName(d.name.replace(/[_-]+/g, ' ').trim() || 'sprite');
       if (design) { setName(design.name); setDescription(design.description); }
       else try {
@@ -290,6 +300,36 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
     setLoops(null);
   };
 
+  // Video: once the frames are ready, find the loop and apply the best one. One-shot moves
+  // (attack, hurt...) keep the whole clip, thinned to the loop rate.
+  const moveLoops = useMemo(() => {
+    const id = (animHint.current ?? '').replace(/-\d+$/, '');
+    const m = design?.moves.find(x => x.id === animHint.current);
+    return m ? m.loop : !id || /idle|walk|run|dash|fall|fly|hover/.test(id);
+  }, [design, files]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (autoLoop.current !== 'pending' || !prepared || !src || src.kind !== 'video' || order.length < 6) return;
+    if (moveLoops) { autoLoop.current = 'waiting'; findLoop(); }
+    else {
+      autoLoop.current = 'done';
+      const sec = spanMs(range[0], range[1]) / 1000;
+      setCount(Math.max(6, Math.min(range[1] - range[0], Math.round(sec * LOOP_FPS))));
+    }
+  }, [prepared, order.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (autoLoop.current !== 'waiting' || !loops) return;
+    autoLoop.current = 'done';
+    setCandidates(loops);
+    setCandidate(0);
+    if (loops.length) applyLoop(loops[0]);
+  }, [loops]); // eslint-disable-line react-hooks/exhaustive-deps
+  const nextCandidate = () => {
+    if (candidates.length < 2) return;
+    const k = (candidate + 1) % candidates.length;
+    setCandidate(k);
+    applyLoop(candidates[k]);
+  };
+
   // ---------- derived ----------
   const chosen = results?.[pick] ?? null;
   const report = quality?.[pick] ?? null;
@@ -369,7 +409,60 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
           {report && <span className={`badge ${report.score >= 90 ? 'ok' : report.score >= 70 ? 'warn' : 'err'}`} title="Quality score">quality {report.score}</span>}
         </div>
         {loading && <p className="pad">Decoding…</p>}
-        {!loading && src && (
+        {!loading && src && simple && (
+          <div className="pz-simple">
+            <div className="pzs-preview">
+              {chosen && !running ? <AnimPreview key={`${previewFps}-${order.join(',')}`} frames={segFrames(chosen)} fps={previewFps} width={340} height={300} playing />
+                : <div className="pz-wait" style={{ width: 340, height: 300 }}>{autoLoop.current === 'waiting' ? 'Finding one clean loop…' : 'Making pixel art…'}</div>}
+              {chosen && <span className="dim small">{order.length} frames · {previewFps} fps · {(order.length / previewFps).toFixed(2)} s {moveLoops ? 'per loop' : 'long'} · {chosen.frames[0].width}×{chosen.frames[0].height} · {chosen.palette.length} colours</span>}
+            </div>
+            <div className="pzs-controls">
+              {target ? (
+                <div className="pzs-dest">
+                  <span className="dim small">Saving</span>
+                  <input className="pzs-anim" value={seg?.name ?? ''} onChange={e => patchSeg(0, { name: e.target.value })} aria-label="Animation name" />
+                  <span className="dim small">into <strong>{target.asset.name}</strong> at {target.height}px, feet lined up with its other animations{target.asset.animations.some(a => a.name === seg?.name) ? '; it replaces the current one' : ''}.</span>
+                </div>
+              ) : (
+                <>
+                  <label className="field"><span>Save into</span>
+                    <select value={targetId} onChange={e => setTargetId(e.target.value)}>
+                      <option value="new">A new sprite</option>
+                      {assets.filter(a => a.kind === 'character').map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </select>
+                  </label>
+                  <div className="row2">
+                    <label className="field"><span>Sprite name</span><input value={name} onChange={e => { setName(e.target.value); saveBrief({ name: e.target.value }); }} /></label>
+                    <label className="field"><span>Animation</span><input value={seg?.name ?? ''} onChange={e => patchSeg(0, { name: e.target.value })} /></label>
+                  </div>
+                  <label className="field"><span>Size · {opts.targetHeight}px tall</span>
+                    <div className="seg compact plain">
+                      {[...new Set([style.unitHeight, 48, 64, 80, 96])].sort((a, b) => a - b).map(h => <button key={h} className={opts.targetHeight === h ? 'active' : ''} onClick={() => set('targetHeight', h)}>{h}px</button>)}
+                    </div>
+                  </label>
+                </>
+              )}
+              <label className="field"><span>Speed · {previewFps} fps</span>
+                <input type="range" min={4} max={30} value={seg?.fps ?? 12} onChange={e => patchSeg(0, { fps: +e.target.value })} aria-label="Frames per second" />
+              </label>
+              {!moveLoops && candidates.length === 0 && (
+                <div className="pzs-loop">
+                  <span className="small">Plays once, the whole clip.</span>
+                  <button className="ghost small" onClick={() => { autoLoop.current = 'waiting'; findLoop(); }}><Icon name="loop" /> Find a loop instead</button>
+                </div>
+              )}
+              {(moveLoops || candidates.length > 0) && (
+                <div className="pzs-loop">
+                  <span className="small">{candidates.length ? <>Loop found: <strong>one cycle, {order.length} frames</strong>{candidates.length > 1 ? ` (option ${candidate + 1} of ${candidates.length})` : ''}</> : autoLoop.current === 'done' ? 'No clean loop found: the whole clip is used.' : 'Looking for the loop…'}</span>
+                  {candidates.length > 1 && <button className="ghost small" onClick={nextCandidate}><Icon name="refresh" /> Try another loop</button>}
+                </div>
+              )}
+              {report && report.score < 70 && <div className="issue warn small">Quality {report.score}: open Advanced settings to see what to fix.</div>}
+              <p className="dim small">Background, watermark and shadow are removed; edges are sharpened. Speed and timing can be changed later on the move's Adjust panel.</p>
+            </div>
+          </div>
+        )}
+        {!loading && src && !simple && (
           <div className="pz-body">
             {/* ---------- left: source + destination ---------- */}
             <section className="pz-col">
@@ -615,6 +708,7 @@ export function PixelizeDialog({ files, style, projectId, assets, initialTarget,
           </div>
         )}
         <div className="modal-foot">
+          {src?.kind === 'video' && <button className="ghost small pz-mode" onClick={() => setSimple(x => !x)}><Icon name={simple ? 'grid' : 'expand'} /> {simple ? 'Advanced settings' : 'Simple view'}</button>}
           <button onClick={onCancel}>Cancel</button>
           <button className="primary" disabled={!chosen || busy || running} onClick={doImport}>{importLabel}</button>
         </div>
